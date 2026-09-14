@@ -216,6 +216,9 @@ function saveBase64ToDrive(base64Data, contacto, areaSector) {
 
 // Inicialización de pestañas técnicas maestras (si no existen en la hoja de cálculo)
 function initTechnicalTabs(ss) {
+  if (!ss) {
+    ss = SpreadsheetApp.getActiveSpreadsheet();
+  }
   const materialesCols = [
     "CANALETAS", "TUBO PVC SEL", "CORRUGADO PVC", "TUBO PVC SAP",
     "TUBO EMT", "TUBO IMC", "CORRUGADO EMT", "CORRUGADO LIQUID TIGHT"
@@ -287,6 +290,9 @@ function initTechnicalTabs(ss) {
 
 // Obtener mapa de columnas y sus elementos prioritarios
 function getSheetColumnsMap(ss, sheetName) {
+  if (!ss) {
+    ss = SpreadsheetApp.getActiveSpreadsheet();
+  }
   let sheet = ss.getSheetByName(sheetName);
   if (!sheet && sheetName === "HERRAMIENTAS_ESTRUCTURA") {
     sheet = ss.getSheetByName("HERRAMIENTAS ESTRUCTURA");
