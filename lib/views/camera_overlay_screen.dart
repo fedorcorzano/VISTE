@@ -12,8 +12,10 @@ import 'package:vector_math/vector_math_64.dart' show Vector3;
 
 import '../config/constants.dart';
 import '../models/project_model.dart';
+import '../models/session_evidence_model.dart';
 import '../models/sticker_model.dart';
 import '../services/google_sheets_service.dart';
+import 'project_summary_report_screen.dart';
 
 // ============================================================================
 // 1. PALETA DE STICKERS DINÁMICOS DESDE EXCEL CON PESTAÑAS Y BUSCADOR
@@ -273,9 +275,10 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
   bool _isProcessing = false;
   final List<PlacedSticker> _placedStickers = [];
 
-  // Sesión continua multiproyecto (VISTEC V2)
+  // Sesión continua multiproyecto (VISTEC V2 & V3)
   int _sessionPhotoNumber = 1;
   int _savedPhotosCount = 0;
+  late final ProjectSessionModel _sessionModel;
 
   Map<String, List<String>> _catalogs = {
     'estructuras': TechnicalCatalogMatrix.defaultEstructuras,
@@ -292,6 +295,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
   @override
   void initState() {
     super.initState();
+    _sessionModel = ProjectSessionModel(project: widget.project);
     if (widget.initialImageBytes != null) {
       _capturedImageBytes = widget.initialImageBytes;
     }
@@ -488,7 +492,15 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
     );
 
     if (end == true && mounted) {
-      Navigator.pop(context, true);
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ProjectSummaryReportScreen(session: _sessionModel),
+        ),
+      );
+      if (mounted) {
+        Navigator.pop(context, true);
+      }
     }
   }
 
@@ -882,6 +894,22 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
         materiales: materialesTags,
       );
 
+      // Registrar evidencia en la sesión consolidada (VISTEC V3)
+      _sessionModel.addPhoto(
+        SessionEvidenceRecord(
+          photoNumber: _sessionPhotoNumber,
+          areaSector: finalAreaSector,
+          localImagePath: localFilePath,
+          pngBytes: pngBytes,
+          estructuras: estructurasTags,
+          materiales: materialesTags,
+          peligros: peligrosTags,
+          herramientas: deducedHerramientas,
+          accesorios: deducedAccesorios,
+          timestamp: DateTime.now(),
+        ),
+      );
+
       // 6. Preparar modelo con foto Base64 y metadatos completos
       final String base64Image = base64Encode(pngBytes);
       final ProjectModel finalProject = widget.project.copyWith(
@@ -979,9 +1007,17 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                 ),
                 icon: const Icon(Icons.flag, size: 18),
                 label: const Text('🏁 Finalizar Proyecto'),
-                onPressed: () {
+                onPressed: () async {
                   Navigator.pop(ctx);
-                  Navigator.pop(context, true); // Retorna a form_screen indicando fin de proyecto
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ProjectSummaryReportScreen(session: _sessionModel),
+                    ),
+                  );
+                  if (mounted) {
+                    Navigator.pop(context, true); // Retorna a form_screen indicando fin de proyecto
+                  }
                 },
               ),
               ElevatedButton.icon(
@@ -1110,7 +1146,19 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
-          if (_savedPhotosCount > 0)
+          if (_sessionModel.totalPhotos > 0) ...[
+            IconButton(
+              icon: const Icon(Icons.assessment_outlined, color: Color(0xFF38BDF8)),
+              tooltip: 'Ver Resumen y Reportes PDF',
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ProjectSummaryReportScreen(session: _sessionModel),
+                  ),
+                );
+              },
+            ),
             TextButton.icon(
               icon: const Icon(Icons.flag_circle, color: Color(0xFF10B981), size: 18),
               label: const Text(
@@ -1123,6 +1171,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
               ),
               onPressed: _confirmEndSession,
             ),
+          ],
           IconButton(
             icon: const Icon(Icons.photo_library_outlined),
             tooltip: 'Cargar foto de la memoria / galería',
