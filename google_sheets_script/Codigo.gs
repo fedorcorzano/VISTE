@@ -220,20 +220,21 @@ function initTechnicalTabs(ss) {
     ss = SpreadsheetApp.getActiveSpreadsheet();
   }
   const materialesCols = [
-    "CANALETAS", "TUBO PVC SEL", "CORRUGADO PVC", "TUBO PVC SAP",
-    "TUBO EMT", "TUBO IMC", "CORRUGADO EMT", "CORRUGADO LIQUID TIGHT"
+    "Canaletas", "Tubo PVC SEL", "Corrugado PVC", "Tubo PVC SAP",
+    "Tubo EMT", "Tubo IMC", "Corrugado EMT", "Corrugado Liquid Tight"
   ];
 
   const estructurasCols = [
-    "CONCRETO", "LADRILLO HUECO", "LADRILLO MACIZO", "DRYWALL",
-    "MAYOLICA", "VIDRIO", "FIERRO", "ACERO INOXIDABLE", "POLICARBONATO", "TEJA"
+    "Concreto", "Ladrillo Hueco", "Ladrillo Macizo", "Drywall",
+    "Mayólica", "Vidrio", "Fierro", "Acero Inoxidable", "Policarbonato", "Teja"
   ];
 
   // 1. Pestaña ACCESORIOS_MATERIAL
-  if (!ss.getSheetByName("ACCESORIOS_MATERIAL")) {
-    const s = ss.insertSheet("ACCESORIOS_MATERIAL");
-    s.appendRow(materialesCols);
-    s.getRange(1, 1, 1, materialesCols.length).setBackground("#14532D").setFontColor("#FFFFFF").setFontWeight("bold");
+  let sAcc = ss.getSheetByName("ACCESORIOS_MATERIAL");
+  if (!sAcc) {
+    sAcc = ss.insertSheet("ACCESORIOS_MATERIAL");
+    sAcc.appendRow(materialesCols);
+    sAcc.getRange(1, 1, 1, materialesCols.length).setBackground("#14532D").setFontColor("#FFFFFF").setFontWeight("bold");
     
     // Accesorios prioritarios
     const accData = [
@@ -245,15 +246,19 @@ function initTechnicalTabs(ss) {
       ["Cinta doble contacto", "Abrazaderas tipo omega", "", "Abrazaderas metálicas U", "Boquillas terminales", "Sellador de roscas", "", ""],
       ["Tarugos y tornillos", "", "", "", "Riel Unistrut", "", "", ""]
     ];
-    accData.forEach(row => s.appendRow(row));
-    s.setFrozenRows(1);
+    accData.forEach(row => sAcc.appendRow(row));
+    sAcc.setFrozenRows(1);
+  } else {
+    // Si ya existe, actualiza los encabezados de la fila 1 al formato limpio
+    sAcc.getRange(1, 1, 1, materialesCols.length).setValues([materialesCols]);
   }
 
   // 2. Pestaña HERRAMIENTAS_MATERIAL
-  if (!ss.getSheetByName("HERRAMIENTAS_MATERIAL")) {
-    const s = ss.insertSheet("HERRAMIENTAS_MATERIAL");
-    s.appendRow(materialesCols);
-    s.getRange(1, 1, 1, materialesCols.length).setBackground("#047857").setFontColor("#FFFFFF").setFontWeight("bold");
+  let sToolMat = ss.getSheetByName("HERRAMIENTAS_MATERIAL");
+  if (!sToolMat) {
+    sToolMat = ss.insertSheet("HERRAMIENTAS_MATERIAL");
+    sToolMat.appendRow(materialesCols);
+    sToolMat.getRange(1, 1, 1, materialesCols.length).setBackground("#047857").setFontColor("#FFFFFF").setFontWeight("bold");
 
     const toolMatData = [
       ["Tijera cortacanaletas/Ingletadora", "Sierra/Cortador PVC", "Cúter/Cuchilla", "Cortatubos PVC/Sierra arco", "Doblador tubo EMT (Curvadora)", "Terraja roscadora IMC", "Sierra metal diente fino", "Cúter/Sierra cubierta plástica"],
@@ -264,16 +269,18 @@ function initTechnicalTabs(ss) {
       ["", "", "", "", "Nivel torpedo magnético", "Aceite para roscar", "", ""],
       ["", "", "", "", "Flexómetro", "Taladro percutor", "", ""]
     ];
-    toolMatData.forEach(row => s.appendRow(row));
-    s.setFrozenRows(1);
+    toolMatData.forEach(row => sToolMat.appendRow(row));
+    sToolMat.setFrozenRows(1);
+  } else {
+    sToolMat.getRange(1, 1, 1, materialesCols.length).setValues([materialesCols]);
   }
 
   // 3. Pestaña HERRAMIENTAS_ESTRUCTURA
-  const structSheetName = ss.getSheetByName("HERRAMIENTAS_ESTRUCTURA") ? "HERRAMIENTAS_ESTRUCTURA" : (ss.getSheetByName("HERRAMIENTAS ESTRUCTURA") ? "HERRAMIENTAS ESTRUCTURA" : null);
-  if (!structSheetName) {
-    const s = ss.insertSheet("HERRAMIENTAS_ESTRUCTURA");
-    s.appendRow(estructurasCols);
-    s.getRange(1, 1, 1, estructurasCols.length).setBackground("#0369A1").setFontColor("#FFFFFF").setFontWeight("bold");
+  let sStruct = ss.getSheetByName("HERRAMIENTAS_ESTRUCTURA") || ss.getSheetByName("HERRAMIENTAS ESTRUCTURA");
+  if (!sStruct) {
+    sStruct = ss.insertSheet("HERRAMIENTAS_ESTRUCTURA");
+    sStruct.appendRow(estructurasCols);
+    sStruct.getRange(1, 1, 1, estructurasCols.length).setBackground("#0369A1").setFontColor("#FFFFFF").setFontWeight("bold");
 
     const toolStructData = [
       ["Rotomartillo SDS Plus/Max", "Taladro percusión suave/sin percusión", "Rotomartillo/Taladro percutor", "Atornillador inalámbrico drywall", "Broca diamantada/carburo tungsteno", "Ventosas dobles sujeción vidrio", "Taladro brocas metal HSS/Cobalto", "Brocas especiales Cobalto HSS-Co", "Sierra caladora diente fino plástico", "Amoladora disco diamantado continuo"],
@@ -283,8 +290,10 @@ function initTechnicalTabs(ss) {
       ["Martillo/Comba pequeña", "", "", "Detector de perfiles metálicos", "Nivel de gota", "", "Punzón de centro/Granete", "Llaves especiales para inox", "", ""],
       ["Extensión eléctrica industrial", "", "", "", "", "", "Cepillo de alambre", "", "", ""]
     ];
-    toolStructData.forEach(row => s.appendRow(row));
-    s.setFrozenRows(1);
+    toolStructData.forEach(row => sStruct.appendRow(row));
+    sStruct.setFrozenRows(1);
+  } else {
+    sStruct.getRange(1, 1, 1, estructurasCols.length).setValues([estructurasCols]);
   }
 }
 
