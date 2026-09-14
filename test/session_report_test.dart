@@ -4,6 +4,7 @@ import 'package:vistec/models/project_model.dart';
 import 'package:vistec/models/session_evidence_model.dart';
 import 'package:vistec/services/internal_report_pdf_service.dart';
 import 'package:vistec/services/client_report_pdf_service.dart';
+import 'package:vistec/services/project_manager_report_pdf_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -188,6 +189,12 @@ void main() {
 
     test('ClientReportPdfService generates valid PDF bytes with images and SST', () async {
       final pdfBytes = await ClientReportPdfService.generatePdf(session);
+      expect(pdfBytes, isNotNull);
+      expect(pdfBytes.length, greaterThan(1000));
+    });
+
+    test('ProjectManagerReportPdfService generates valid PDF bytes with all metadata', () async {
+      final pdfBytes = await ProjectManagerReportPdfService.generatePdf(session);
       expect(pdfBytes, isNotNull);
       expect(pdfBytes.length, greaterThan(1000));
     });

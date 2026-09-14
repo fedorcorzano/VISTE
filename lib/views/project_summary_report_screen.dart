@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:printing/printing.dart';
 import '../models/session_evidence_model.dart';
 import '../services/internal_report_pdf_service.dart';
+import '../services/project_manager_report_pdf_service.dart';
 import '../services/client_report_pdf_service.dart';
 import '../services/catalog_visual_service.dart';
 
@@ -23,13 +24,14 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   Uint8List? _internalPdfBytes;
+  Uint8List? _managerPdfBytes;
   Uint8List? _clientPdfBytes;
   bool _isLoadingPdf = false;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _generatePdfsInBackground();
   }
 
@@ -44,10 +46,14 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
     try {
       final internal =
           await InternalReportPdfService.generatePdf(widget.session);
-      final client = await ClientReportPdfService.generatePdf(widget.session);
+      final manager =
+          await ProjectManagerReportPdfService.generatePdf(widget.session);
+      final client =
+          await ClientReportPdfService.generatePdf(widget.session);
       if (mounted) {
         setState(() {
           _internalPdfBytes = internal;
+          _managerPdfBytes = manager;
           _clientPdfBytes = client;
           _isLoadingPdf = false;
         });
@@ -156,9 +162,9 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
     if (shouldSend == true && mounted) {
       final safeProject = widget.session.project.proyecto
           .replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
-      final filename = 'VISTEC_ReporteCliente_SST_$safeProject.pdf';
+      final filename = 'VIGILARTE_Reporte_Cliente_SST_$safeProject.pdf';
       final subject =
-          'Propuesta de Equipos y Seguridad SST - Proyecto: ${widget.session.project.proyecto}';
+          'VIGILARTE: Condiciones de Seguridad SST y Equipos - Proyecto: ${widget.session.project.proyecto}';
 
       await Printing.sharePdf(
         bytes: _clientPdfBytes!,
@@ -209,11 +215,12 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
           labelColor: const Color(0xFF38BDF8),
           unselectedLabelColor: Colors.white60,
           labelStyle:
-              const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+              const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold),
           tabs: const [
-            Tab(icon: Icon(Icons.dashboard_outlined, size: 20), text: 'Dashboard'),
-            Tab(icon: Icon(Icons.shopping_cart_outlined, size: 20), text: 'Compras (PDF)'),
-            Tab(icon: Icon(Icons.security_outlined, size: 20), text: 'Cliente (PDF)'),
+            Tab(icon: Icon(Icons.dashboard_outlined, size: 19), text: 'Dashboard'),
+            Tab(icon: Icon(Icons.shopping_cart_outlined, size: 19), text: 'Compras'),
+            Tab(icon: Icon(Icons.engineering_outlined, size: 19), text: 'Gestor'),
+            Tab(icon: Icon(Icons.security_outlined, size: 19), text: 'Cliente SST'),
           ],
         ),
       ),
@@ -221,8 +228,9 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
         controller: _tabController,
         children: [
           _buildDashboardTab(),
-          _buildPdfPreviewTab(_internalPdfBytes, 'Reporte_Interno_Compras.pdf'),
-          _buildPdfPreviewTab(_clientPdfBytes, 'Reporte_Cliente_SST.pdf'),
+          _buildPdfPreviewTab(_internalPdfBytes, 'VIGILARTE_Reporte_Compras.pdf'),
+          _buildPdfPreviewTab(_managerPdfBytes, 'VIGILARTE_Reporte_Gestor.pdf'),
+          _buildPdfPreviewTab(_clientPdfBytes, 'VIGILARTE_Reporte_Cliente_SST.pdf'),
         ],
       ),
     );

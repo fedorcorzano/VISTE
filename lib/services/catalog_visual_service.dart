@@ -194,6 +194,49 @@ class CatalogVisualService {
         .trim();
   }
 
+  /// Convierte enlaces de Google Drive comunes a enlaces de imagen directos
+  static String normalizeImageUrl(String url) {
+    final clean = url.trim();
+    if (clean.isEmpty) return '';
+
+    // Manejo de URLs de Google Drive tipo:
+    // https://drive.google.com/file/d/FILE_ID/view...
+    // https://drive.google.com/open?id=FILE_ID
+    if (clean.contains('drive.google.com')) {
+      final matchId = RegExp(r'(?:/d/|id=)([a-zA-Z0-9_-]+)').firstMatch(clean);
+      if (matchId != null) {
+        final fileId = matchId.group(1);
+        return 'https://drive.google.com/uc?export=view&id=$fileId';
+      }
+    }
+    return clean;
+  }
+
+  /// Actualiza o amplía el catálogo visual dinámicamente con los datos provenientes de Google Sheets
+  static void updateFromSheets(List<Map<String, dynamic>> items) {
+    for (final item in items) {
+      final name = (item['item'] ?? item['Item'] ?? '').toString().trim();
+      if (name.isEmpty) continue;
+
+      final category = (item['categoria'] ?? item['Categoria'] ?? 'Herramienta').toString().trim();
+      final commercial = (item['nombreComercial'] ?? item['Nombre Comercial'] ?? name).toString().trim();
+      final spec = (item['especificacion'] ?? item['Especificacion'] ?? '').toString().trim();
+      final rawUrl = (item['urlImagen'] ?? item['URL Imagen'] ?? '').toString().trim();
+      final imageUrl = normalizeImageUrl(rawUrl);
+
+      final key = _normalize(name);
+      _catalog[key] = VisualCatalogItem(
+        title: name,
+        category: category,
+        commercialName: commercial,
+        specification: spec.isNotEmpty ? spec : 'Especificación estándar según catálogo de obra.',
+        imageUrl: imageUrl,
+        fallbackIcon: category.toLowerCase().contains('mat') ? Icons.inventory_2 : Icons.handyman,
+        badgeColor: category.toLowerCase().contains('mat') ? const Color(0xFF4ADE80) : const Color(0xFF38BDF8),
+      );
+    }
+  }
+
   /// Devuelve la tarjeta visual detallada o un objeto genérico estilizado
   static VisualCatalogItem getItemInfo(String name, {bool isMaterial = false}) {
     final clean = _normalize(name);
@@ -222,3 +265,4 @@ class CatalogVisualService {
     );
   }
 }
+

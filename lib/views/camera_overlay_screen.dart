@@ -716,14 +716,37 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
         : 4.2;
 
     Uint8List pngBytes;
+    Uint8List clientPngBytes;
     try {
+      // 2.1 Imagen completa para Gestor de Proyectos (todos los pines y metadata)
       ui.Image image = await boundary.toImage(pixelRatio: targetRatio);
       ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       if (byteData == null) {
         throw Exception('Error al codificar imagen combinada en PNG.');
       }
       pngBytes = byteData.buffer.asUint8List();
+      clientPngBytes = pngBytes; // Por defecto
       debugPrint('Imagen capturada con resolución garantizada: ${image.width} x ${image.height}');
+
+      // 2.2 Imagen exclusiva para Cliente (SOLO marcadores de seguridad SST, sin herramientas ni materiales)
+      final allStickersBackup = List<PlacedSticker>.from(_placedStickers);
+      final hasNonSafety = _placedStickers.any((s) => s.sticker.category != StickerCategory.peligros);
+      if (hasNonSafety) {
+        setState(() {
+          _placedStickers.removeWhere((s) => s.sticker.category != StickerCategory.peligros);
+        });
+        await Future.delayed(const Duration(milliseconds: 30));
+        ui.Image clientImg = await boundary.toImage(pixelRatio: targetRatio);
+        ByteData? clientBd = await clientImg.toByteData(format: ui.ImageByteFormat.png);
+        if (clientBd != null) {
+          clientPngBytes = clientBd.buffer.asUint8List();
+          debugPrint('Imagen exclusiva de cliente SST capturada: ${clientImg.width} x ${clientImg.height}');
+        }
+        setState(() {
+          _placedStickers.clear();
+          _placedStickers.addAll(allStickersBackup);
+        });
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -901,6 +924,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
           areaSector: finalAreaSector,
           localImagePath: localFilePath,
           pngBytes: pngBytes,
+          clientPngBytes: clientPngBytes,
           estructuras: estructurasTags,
           materiales: materialesTags,
           peligros: peligrosTags,
@@ -1852,10 +1876,11 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
               ),
               const Spacer(),
               const Text(
-                'Toca un elemento para editar o eliminar',
+                'Elaborado por Fedor Corzano',
                 style: TextStyle(
                   color: Colors.white38,
                   fontSize: 8.5,
+                  fontStyle: FontStyle.italic,
                 ),
               ),
             ],

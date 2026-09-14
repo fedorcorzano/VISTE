@@ -39,7 +39,7 @@ class InternalReportPdfService {
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
                     pw.Text(
-                      'VISTEC - REPORTE INTERNO DE COMPRAS Y LOGISTICA',
+                      'VIGILARTE - REPORTE INTERNO DE COMPRAS Y LOGISTICA',
                       style: pw.TextStyle(
                         color: primaryColor,
                         fontSize: 14,
@@ -82,11 +82,11 @@ class InternalReportPdfService {
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
                 pw.Text(
-                  'VISTEC Sistema de Gestion de Evidencias - Confidencial',
+                  'VIGILARTE Sistema de Gestion de Evidencias - Elaborado por Fedor Corzano',
                   style: const pw.TextStyle(color: PdfColors.grey500, fontSize: 8),
                 ),
                 pw.Text(
-                  'Página ${context.pageNumber} de ${context.pagesCount}',
+                  'Pagina ${context.pageNumber} de ${context.pagesCount}',
                   style: const pw.TextStyle(color: PdfColors.grey600, fontSize: 8),
                 ),
               ],

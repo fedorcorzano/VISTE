@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../config/constants.dart';
 import '../models/project_model.dart';
 import '../models/sticker_model.dart';
+import 'catalog_visual_service.dart';
 
 class GoogleSheetsService {
   String get _webAppUrl => Constants.googleScriptUrl;
@@ -79,6 +80,18 @@ class GoogleSheetsService {
             TechnicalCatalogMatrix.herramientasEstructuraOverride = raw.map(
               (k, v) => MapEntry(k, List<String>.from(v ?? [])),
             );
+          }
+          if (data['catalogoVisual'] is List) {
+            final List rawList = data['catalogoVisual'];
+            final List<Map<String, dynamic>> items = [];
+            for (final elem in rawList) {
+              if (elem is Map) {
+                items.add(Map<String, dynamic>.from(elem));
+              }
+            }
+            if (items.isNotEmpty) {
+              CatalogVisualService.updateFromSheets(items);
+            }
           }
         }
 

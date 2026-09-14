@@ -3,8 +3,8 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../models/session_evidence_model.dart';
 
-class ClientReportPdfService {
-  /// Genera el reporte formal exclusivo para el cliente (SOLO condiciones de seguridad SST y Equipos cotizados)
+class ProjectManagerReportPdfService {
+  /// Genera el reporte técnico integral para el Gestor de Proyectos de VIGILARTE
   static Future<Uint8List> generatePdf(ProjectSessionModel session) async {
     final pdf = pw.Document();
 
@@ -17,7 +17,7 @@ class ClientReportPdfService {
     final hazardsByArea = session.getHazardsByArea();
     final allHazards = session.getConsolidatedHazards();
 
-    // 1. PÁGINA DE RESUMEN EJECUTIVO DE SEGURIDAD SST Y EQUIPOS
+    // 1. PÁGINA DE RESUMEN EJECUTIVO Y METADATA DEL PROYECTO
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
@@ -35,7 +35,7 @@ class ClientReportPdfService {
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
                     pw.Text(
-                      'VIGILARTE - CONDICIONES DE SEGURIDAD SST Y EQUIPOS',
+                      'VIGILARTE - REPORTE DE GESTOR DE PROYECTOS (METADATA)',
                       style: pw.TextStyle(
                         color: primaryColor,
                         fontSize: 13,
@@ -44,7 +44,7 @@ class ClientReportPdfService {
                     ),
                     pw.SizedBox(height: 2),
                     pw.Text(
-                      'Informe de Condiciones de Seguridad en Campo y Propuesta de Equipamiento',
+                      'Informe Tecnico Integral de Obra, Canalizaciones y Validacion de Campo',
                       style: const pw.TextStyle(color: PdfColors.grey700, fontSize: 8.5),
                     ),
                   ],
@@ -52,11 +52,11 @@ class ClientReportPdfService {
                 pw.Container(
                   padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: pw.BoxDecoration(
-                    color: const PdfColor.fromInt(0xFF10B981),
+                    color: const PdfColor.fromInt(0xFF0284C7),
                     borderRadius: pw.BorderRadius.circular(4),
                   ),
                   child: pw.Text(
-                    'REPORTE CLIENTE',
+                    'GESTOR PROYECTO',
                     style: pw.TextStyle(
                       color: PdfColors.white,
                       fontSize: 8,
@@ -78,7 +78,7 @@ class ClientReportPdfService {
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
                 pw.Text(
-                  'VIGILARTE - Entregable al Cliente - Elaborado por Fedor Corzano',
+                  'VIGILARTE - Gestor de Proyectos - Elaborado por Fedor Corzano',
                   style: const pw.TextStyle(color: PdfColors.grey500, fontSize: 8),
                 ),
                 pw.Text(
@@ -122,19 +122,30 @@ class ClientReportPdfService {
                     ),
                   ],
                 ),
+                pw.SizedBox(height: 6),
+                pw.Row(
+                  children: [
+                    pw.Expanded(
+                      child: _buildInfoRow('Responsable de Campo:', session.project.responsable),
+                    ),
+                    pw.Expanded(
+                      child: _buildInfoRow('Total Fotos Relevadas:', '${session.totalPhotos} fotos tecnicas'),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
           pw.SizedBox(height: 16),
 
-          // SECCIÓN 1: CONDICIONES DE SEGURIDAD SST IDENTIFICADAS EN CAMPO
+          // SECCIÓN 1: CONDICIONES DE SEGURIDAD SST IDENTIFICADAS
           pw.Container(
             padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 8),
             color: primaryColor,
             child: pw.Row(
               children: [
                 pw.Text(
-                  '1. CONDICIONES DE SEGURIDAD Y PREVENCION DE RIESGOS (SST)',
+                  '1. CONDICIONES DE SEGURIDAD Y PREVENCION (SST)',
                   style: pw.TextStyle(
                     color: PdfColors.white,
                     fontSize: 9.5,
@@ -157,32 +168,27 @@ class ClientReportPdfService {
               child: pw.Row(
                 children: [
                   pw.Text(
-                    '[OK] No se identificaron condiciones de riesgo criticas en las areas evaluadas.',
+                    '[OK] No se identificaron peligros criticos en los sectores relevados.',
                     style: const pw.TextStyle(fontSize: 8.5, color: PdfColor.fromInt(0xFF065F46)),
                   ),
                 ],
               ),
             )
           else ...[
-            pw.Text(
-              'A continuacion se presentan las condiciones de seguridad observadas en cada sector inspeccionado y las medidas preventivas recomendadas para el desarrollo seguro de los trabajos:',
-              style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
-            ),
-            pw.SizedBox(height: 6),
             pw.Table(
               border: pw.TableBorder.all(color: borderGray, width: 0.5),
               columnWidths: const {
-                0: pw.FlexColumnWidth(2.0), // Sector
-                1: pw.FlexColumnWidth(2.5), // Condicion de Seguridad / Peligro
-                2: pw.FlexColumnWidth(3.5), // Medida de Prevencion SST
+                0: pw.FlexColumnWidth(1.8),
+                1: pw.FlexColumnWidth(2.5),
+                2: pw.FlexColumnWidth(3.5),
               },
               children: [
                 pw.TableRow(
                   decoration: const pw.BoxDecoration(color: lightBg),
                   children: [
                     _buildHeaderCell('Sector / Area'),
-                    _buildHeaderCell('Condicion de Seguridad Identificada'),
-                    _buildHeaderCell('Medida de Control / Prevencion (SST)'),
+                    _buildHeaderCell('Peligros Identificados'),
+                    _buildHeaderCell('Medida Preventiva Recomendada'),
                   ],
                 ),
                 ...hazardsByArea.entries.map((entry) {
@@ -230,14 +236,14 @@ class ClientReportPdfService {
           ],
           pw.SizedBox(height: 18),
 
-          // SECCIÓN 2: PROPUESTA DE EQUIPOS Y SISTEMAS COTIZADOS
+          // SECCIÓN 2: METADATA ESTRUCTURAL Y CANALIZACIONES POR SECTOR
           pw.Container(
             padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 8),
             color: primaryColor,
             child: pw.Row(
               children: [
                 pw.Text(
-                  '2. PROPUESTA DE EQUIPAMIENTO Y SISTEMAS COTIZADOS',
+                  '2. METADATA ESTRUCTURAL Y PROPUESTA DE CANALIZACIONES',
                   style: pw.TextStyle(
                     color: PdfColors.white,
                     fontSize: 9.5,
@@ -249,26 +255,24 @@ class ClientReportPdfService {
           ),
           pw.SizedBox(height: 8),
 
-          pw.Text(
-            'Detalle de la solucion tecnica de equipamiento propuesta para cada sector relevado en el proyecto:',
-            style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
-          ),
-          pw.SizedBox(height: 6),
-
           pw.Table(
             border: pw.TableBorder.all(color: borderGray, width: 0.5),
             columnWidths: const {
-              0: pw.FlexColumnWidth(2.0),
-              1: pw.FlexColumnWidth(3.5),
-              2: pw.FlexColumnWidth(2.5),
+              0: pw.FlexColumnWidth(1.6), // Area
+              1: pw.FlexColumnWidth(2.0), // Estructuras
+              2: pw.FlexColumnWidth(2.2), // Materiales / Canalizaciones
+              3: pw.FlexColumnWidth(2.2), // Herramientas Deducidas
+              4: pw.FlexColumnWidth(1.6), // Viabilidad
             },
             children: [
               pw.TableRow(
                 decoration: const pw.BoxDecoration(color: lightBg),
                 children: [
-                  _buildHeaderCell('Sector / Area'),
-                  _buildHeaderCell('Sistema / Equipamiento Propuesto'),
-                  _buildHeaderCell('Estado Tecnico'),
+                  _buildHeaderCell('Sector'),
+                  _buildHeaderCell('Estructuras'),
+                  _buildHeaderCell('Materiales'),
+                  _buildHeaderCell('Herramientas Requeridas'),
+                  _buildHeaderCell('Viabilidad'),
                 ],
               ),
               ...session.photos.map((p) {
@@ -278,14 +282,28 @@ class ClientReportPdfService {
                       padding: const pw.EdgeInsets.all(6),
                       child: pw.Text(
                         p.areaSector,
-                        style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: primaryColor),
+                        style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold, color: primaryColor),
                       ),
                     ),
                     pw.Padding(
                       padding: const pw.EdgeInsets.all(6),
                       child: pw.Text(
-                        'Punto de instalacion preparado y apto para montaje de equipos cotizados.',
-                        style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey800),
+                        p.estructuras.isEmpty ? 'Estandar' : p.estructuras.join(', '),
+                        style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey800),
+                      ),
+                    ),
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.all(6),
+                      child: pw.Text(
+                        p.materiales.isEmpty ? 'Por definir' : p.materiales.join(', '),
+                        style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey800),
+                      ),
+                    ),
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.all(6),
+                      child: pw.Text(
+                        p.herramientas.isEmpty ? 'Estandar' : p.herramientas.take(3).join(', '),
+                        style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey800),
                       ),
                     ),
                     pw.Padding(
@@ -297,8 +315,8 @@ class ClientReportPdfService {
                           borderRadius: pw.BorderRadius.circular(3),
                         ),
                         child: pw.Text(
-                          'Apto para Instalacion',
-                          style: const pw.TextStyle(fontSize: 7.5, color: PdfColor.fromInt(0xFF15803D)),
+                          'Conforme',
+                          style: const pw.TextStyle(fontSize: 7, color: PdfColor.fromInt(0xFF15803D)),
                         ),
                       ),
                     ),
@@ -307,7 +325,7 @@ class ClientReportPdfService {
               }),
             ],
           ),
-          pw.SizedBox(height: 24),
+          pw.SizedBox(height: 20),
 
           // FIRMAS
           pw.Row(
@@ -317,14 +335,14 @@ class ClientReportPdfService {
                 children: [
                   pw.Container(width: 140, height: 1, color: borderGray),
                   pw.SizedBox(height: 4),
-                  pw.Text('Especialista de Seguridad SST VIGILARTE', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
+                  pw.Text('Gestor de Proyectos VIGILARTE', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
                 ],
               ),
               pw.Column(
                 children: [
                   pw.Container(width: 140, height: 1, color: borderGray),
                   pw.SizedBox(height: 4),
-                  pw.Text('Conformidad del Cliente / Supervisor', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
+                  pw.Text('Responsable Tecnico de Obra', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
                 ],
               ),
             ],
@@ -333,11 +351,10 @@ class ClientReportPdfService {
       ),
     );
 
-    // 2. PÁGINAS DE FOTOGRAFÍAS EXCLUSIVAS PARA CLIENTE (SOLO MARCADORES DE CONDICIONES DE SEGURIDAD SST)
+    // 2. PÁGINAS DE FOTOGRAFÍAS TÉCNICAS COMPLETAS (CON TODOS LOS PINES DE METADATA)
     for (int i = 0; i < session.photos.length; i++) {
       final photo = session.photos[i];
-      // USAR EXCLUSIVAMENTE clientImageBytes (con solo marcadores SST, sin herramientas ni materiales)
-      final imageProvider = pw.MemoryImage(photo.clientImageBytes);
+      final imageProvider = pw.MemoryImage(photo.pngBytes); // Versión completa con todos los pines
 
       pdf.addPage(
         pw.Page(
@@ -351,7 +368,7 @@ class ClientReportPdfService {
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
                     pw.Text(
-                      'EVIDENCIA DE SEGURIDAD SST #${photo.photoNumber} - ${photo.areaSector.toUpperCase()}',
+                      'EVIDENCIA #${photo.photoNumber} (METADATA COMPLETA) - ${photo.areaSector.toUpperCase()}',
                       style: pw.TextStyle(
                         color: primaryColor,
                         fontSize: 10.5,
@@ -359,16 +376,16 @@ class ClientReportPdfService {
                       ),
                     ),
                     pw.Text(
-                      'VIGILARTE - Proyecto: ${session.project.proyecto}',
+                      'Proyecto: ${session.project.proyecto}',
                       style: const pw.TextStyle(color: PdfColors.grey600, fontSize: 8),
                     ),
                   ],
                 ),
                 pw.SizedBox(height: 5),
-                pw.Container(height: 1.5, color: const PdfColor.fromInt(0xFF10B981)),
+                pw.Container(height: 1.5, color: accentColor),
                 pw.SizedBox(height: 8),
 
-                // Imagen Fotográfica con SÓLO marcadores de Seguridad
+                // Imagen en Alta Resolución
                 pw.Expanded(
                   child: pw.Center(
                     child: pw.Container(
@@ -385,7 +402,7 @@ class ClientReportPdfService {
                 ),
                 pw.SizedBox(height: 8),
 
-                // Ficha Técnica de Seguridad SST
+                // Ficha Técnica al Pie de la Foto
                 pw.Container(
                   padding: const pw.EdgeInsets.all(8),
                   decoration: pw.BoxDecoration(
@@ -399,9 +416,9 @@ class ClientReportPdfService {
                         child: pw.Column(
                           crossAxisAlignment: pw.CrossAxisAlignment.start,
                           children: [
-                            _buildInfoRow('Sector Inspeccionado:', photo.areaSector),
+                            _buildInfoRow('Estructuras:', photo.estructuras.join(', ')),
                             pw.SizedBox(height: 2),
-                            _buildInfoRow('Condiciones SST Detectadas:', photo.peligros.isEmpty ? 'Area segura / Sin riesgos criticos' : photo.peligros.join(', ')),
+                            _buildInfoRow('Materiales:', photo.materiales.join(', ')),
                           ],
                         ),
                       ),
@@ -409,9 +426,9 @@ class ClientReportPdfService {
                         child: pw.Column(
                           crossAxisAlignment: pw.CrossAxisAlignment.start,
                           children: [
-                            _buildInfoRow('Estado de Seguridad:', photo.peligros.isEmpty ? 'Conforme para trabajos' : 'Requiere aplicacion de controles'),
+                            _buildInfoRow('Peligros SST:', photo.peligros.isEmpty ? 'Ninguno reportado' : photo.peligros.join(', ')),
                             pw.SizedBox(height: 2),
-                            _buildInfoRow('Inspeccionado por:', 'VIGILARTE - Fedor Corzano'),
+                            _buildInfoRow('Herramientas:', photo.herramientas.take(3).join(', ')),
                           ],
                         ),
                       ),

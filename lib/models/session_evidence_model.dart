@@ -42,7 +42,8 @@ class SessionEvidenceRecord {
   final int photoNumber;
   final String areaSector;
   final String localImagePath;
-  final Uint8List pngBytes;
+  final Uint8List pngBytes; // Versión completa con todos los pines para Gestor de Proyectos
+  final Uint8List? clientPngBytes; // Versión exclusiva para el Cliente (SOLO marcadores de seguridad SST)
   final List<String> estructuras;
   final List<String> materiales;
   final List<String> peligros;
@@ -55,6 +56,7 @@ class SessionEvidenceRecord {
     required this.areaSector,
     required this.localImagePath,
     required this.pngBytes,
+    this.clientPngBytes,
     required this.estructuras,
     required this.materiales,
     required this.peligros,
@@ -62,6 +64,9 @@ class SessionEvidenceRecord {
     required this.accesorios,
     required this.timestamp,
   });
+
+  /// Retorna la imagen adecuada para el cliente (con solo marcadores SST) o fallback a la completa
+  Uint8List get clientImageBytes => clientPngBytes ?? pngBytes;
 }
 
 /// Contenedor integral de la sesión de trabajo con métodos de consolidación y métricas

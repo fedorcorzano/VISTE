@@ -295,6 +295,54 @@ function initTechnicalTabs(ss) {
   } else {
     sStruct.getRange(1, 1, 1, estructurasCols.length).setValues([estructurasCols]);
   }
+
+  // 4. Pestaña CATALOGO_VISUAL (Imágenes reales, nombres comerciales y especificaciones ampliables)
+  let sVisual = ss.getSheetByName("CATALOGO_VISUAL");
+  if (!sVisual) {
+    sVisual = ss.insertSheet("CATALOGO_VISUAL");
+    const visualHeaders = ["Item", "Categoria", "Nombre Comercial", "Especificacion", "URL Imagen"];
+    sVisual.appendRow(visualHeaders);
+    sVisual.getRange(1, 1, 1, visualHeaders.length).setBackground("#0F172A").setFontColor("#FFFFFF").setFontWeight("bold");
+
+    const defaultVisualData = [
+      ["Rotomartillo SDS Plus / Max", "Herramienta", "Rotomartillo percutor profesional SDS Plus", "Potencia 800W-1000W, encastre SDS Plus, con selector de cincelado y percusión", "https://images.unsplash.com/photo-1504148455328-c376907d081c?w=600&auto=format&fit=crop&q=80"],
+      ["Doblador de tubo EMT (Hickey / Curvadora)", "Herramienta", "Curvadora manual para tubo EMT / Conduit", "Curvador de aluminio o hierro dúctil con marcas de grados para 3/4\" o 1/2\"", "https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=600&auto=format&fit=crop&q=80"],
+      ["Amoladora angular con disco de corte y desbaste", "Herramienta", "Esmeril angular / Amoladora 4-1/2\"", "Amoladora 4-1/2\" 850W con guarda protectora y discos de corte", "https://images.unsplash.com/photo-1504148455328-c376907d081c?w=600&auto=format&fit=crop&q=80"],
+      ["Brocas SDS de percusión para concreto", "Consumible", "Juego de brocas SDS Plus para concreto", "Brocas con punta Widia en medidas 1/4\", 5/16\", 3/8\" y 1/2\"", "https://images.unsplash.com/photo-1572981779307-38b8cabb2407?w=600&auto=format&fit=crop&q=80"],
+      ["Tubo EMT", "Material", "Tubería metálica rígida liviana Conduit EMT", "Tiras de 3m acero galvanizado estándar ANSI C80.3", "https://images.unsplash.com/photo-1541888946425-d0fbb186f5f7?w=600&auto=format&fit=crop&q=80"],
+      ["Canaletas", "Material", "Canaleta decorativa de superficie con división", "Tramos de 2m PVC autoextinguible con adhesivo doble contacto", "https://images.unsplash.com/photo-1541888946425-d0fbb186f5f7?w=600&auto=format&fit=crop&q=80"],
+      ["Tubo PVC SAP", "Material", "Tubo eléctrico PVC Standard Americano Pesado", "Tiras de 3m con campana para empotrado en piso o concreto", "https://images.unsplash.com/photo-1541888946425-d0fbb186f5f7?w=600&auto=format&fit=crop&q=80"],
+      ["Corrugado Liquid Tight", "Material", "Tubería metálica flexible hermética Liquid Tight", "Núcleo de acero con recubrimiento de PVC para intemperie IP66", "https://images.unsplash.com/photo-1541888946425-d0fbb186f5f7?w=600&auto=format&fit=crop&q=80"],
+      ["Codos planos para canaleta", "Accesorio", "Codo plano para canaleta PVC", "Cambio de dirección plano a 90 grados para canaleta", "https://images.unsplash.com/photo-1541888946425-d0fbb186f5f7?w=600&auto=format&fit=crop&q=80"],
+      ["Conectores EMT rectos", "Accesorio", "Conectores rectos con tornillo para EMT", "Conector de acero o zinc para caja de paso metálica", "https://images.unsplash.com/photo-1541888946425-d0fbb186f5f7?w=600&auto=format&fit=crop&q=80"]
+    ];
+    defaultVisualData.forEach(row => sVisual.appendRow(row));
+    sVisual.setFrozenRows(1);
+  }
+}
+
+// Obtener catálogo visual enriquecido con imágenes de la pestaña CATALOGO_VISUAL
+function getCatalogVisualData(ss) {
+  if (!ss) {
+    ss = SpreadsheetApp.getActiveSpreadsheet();
+  }
+  const s = ss.getSheetByName("CATALOGO_VISUAL");
+  if (!s) return [];
+  const rows = s.getDataRange().getValues();
+  const list = [];
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (row[0] && row[0].toString().trim()) {
+      list.push({
+        item: row[0].toString().trim(),
+        categoria: row[1] ? row[1].toString().trim() : "",
+        nombreComercial: row[2] ? row[2].toString().trim() : "",
+        especificacion: row[3] ? row[3].toString().trim() : "",
+        urlImagen: row[4] ? row[4].toString().trim() : ""
+      });
+    }
+  }
+  return list;
 }
 
 // Obtener mapa de columnas y sus elementos prioritarios
@@ -356,6 +404,7 @@ function doGet(e) {
   const accesoriosMaterial = getSheetColumnsMap(ss, "ACCESORIOS_MATERIAL");
   const herramientasMaterial = getSheetColumnsMap(ss, "HERRAMIENTAS_MATERIAL");
   const herramientasEstructura = getSheetColumnsMap(ss, "HERRAMIENTAS_ESTRUCTURA");
+  const catalogoVisual = getCatalogVisualData(ss);
 
   // Materiales y estructuras pueden provenir de las cabeceras de las pestañas técnicas o de pestañas simples
   const matKeys = Object.keys(accesoriosMaterial).length > 0 
@@ -374,7 +423,8 @@ function doGet(e) {
     riesgos: peligrosFinal,
     accesoriosMaterial: accesoriosMaterial,
     herramientasMaterial: herramientasMaterial,
-    herramientasEstructura: herramientasEstructura
+    herramientasEstructura: herramientasEstructura,
+    catalogoVisual: catalogoVisual
   };
 
   return createJsonResponse(data, 200);
