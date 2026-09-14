@@ -9,9 +9,13 @@ class ProjectModel {
   final String fecha;
   final String mapa;
   final String responsable;
+  final String areaSector;
+  final int numFoto;
   final List<String> peligros;
   final List<String> estructuras;
   final List<String> materiales;
+  final List<String> herramientas;
+  final List<String> accesorios;
   final String fotoBase64;
   final String? localImagePath;
 
@@ -24,9 +28,13 @@ class ProjectModel {
     required this.fecha,
     required this.mapa,
     required this.responsable,
+    this.areaSector = '',
+    this.numFoto = 1,
     this.peligros = const [],
     this.estructuras = const [],
     this.materiales = const [],
+    this.herramientas = const [],
+    this.accesorios = const [],
     this.fotoBase64 = '',
     this.localImagePath,
   });
@@ -40,9 +48,13 @@ class ProjectModel {
     String? fecha,
     String? mapa,
     String? responsable,
+    String? areaSector,
+    int? numFoto,
     List<String>? peligros,
     List<String>? estructuras,
     List<String>? materiales,
+    List<String>? herramientas,
+    List<String>? accesorios,
     String? fotoBase64,
     String? localImagePath,
   }) {
@@ -55,9 +67,13 @@ class ProjectModel {
       fecha: fecha ?? this.fecha,
       mapa: mapa ?? this.mapa,
       responsable: responsable ?? this.responsable,
+      areaSector: areaSector ?? this.areaSector,
+      numFoto: numFoto ?? this.numFoto,
       peligros: peligros ?? this.peligros,
       estructuras: estructuras ?? this.estructuras,
       materiales: materiales ?? this.materiales,
+      herramientas: herramientas ?? this.herramientas,
+      accesorios: accesorios ?? this.accesorios,
       fotoBase64: fotoBase64 ?? this.fotoBase64,
       localImagePath: localImagePath ?? this.localImagePath,
     );
@@ -67,6 +83,9 @@ class ProjectModel {
     final String peligrosStr = peligros.isEmpty ? 'Ninguno' : peligros.join(', ');
     final String estructurasStr = estructuras.isEmpty ? 'N/A' : estructuras.join(', ');
     final String materialesStr = materiales.isEmpty ? 'N/A' : materiales.join(', ');
+    final String herramientasStr = herramientas.isEmpty ? 'N/A' : herramientas.join(', ');
+    final String accesoriosStr = accesorios.isEmpty ? 'N/A' : accesorios.join(', ');
+    final String areaFinal = areaSector.trim().isEmpty ? 'Foto #$numFoto' : areaSector.trim();
 
     return {
       'contacto': contacto,
@@ -75,6 +94,9 @@ class ProjectModel {
       'celular': celular,
       'correo': correo,
       'proyecto': proyecto,
+      'areaSector': areaFinal,
+      'area': areaFinal,
+      'numFoto': numFoto,
       'fecha': fecha,
       'mapa': mapa,
       'responsable': responsable,
@@ -83,6 +105,8 @@ class ProjectModel {
       'ssoma': peligrosStr, // Compatibilidad con hojas anteriores
       'estructuras': estructurasStr,
       'materiales': materialesStr,
+      'herramientas': herramientasStr,
+      'accesorios': accesoriosStr,
       'fotoBase64': fotoBase64,
       'localImagePath': localImagePath ?? '',
     };

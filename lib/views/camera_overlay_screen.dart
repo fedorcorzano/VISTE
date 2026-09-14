@@ -273,29 +273,13 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
   bool _isProcessing = false;
   final List<PlacedSticker> _placedStickers = [];
 
+  // Sesión continua multiproyecto (VISTEC V2)
+  int _sessionPhotoNumber = 1;
+  int _savedPhotosCount = 0;
+
   Map<String, List<String>> _catalogs = {
-    'estructuras': [
-      'Ladrillo',
-      'Concreto',
-      'Madera',
-      'Columnas metálicas',
-      'Coberturas metálicas',
-      'Drywall',
-      'Vidrio',
-      'Tubo PVC',
-      'Tubo EMT',
-    ],
-    'materiales': [
-      'Tubo PVC',
-      'Tubo EMT',
-      'Canaleta PVC',
-      'Escalerilla',
-      'Bandeja de comunicaciones',
-      'Abrazaderas',
-      'Tornillos',
-      'Tarugos plásticos',
-      'Caja metálica',
-    ],
+    'estructuras': TechnicalCatalogMatrix.defaultEstructuras,
+    'materiales': TechnicalCatalogMatrix.defaultMateriales,
     'peligros': [
       'Riesgo Eléctrico',
       'Trabajo en Altura',
@@ -468,8 +452,326 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
     );
   }
 
+  /// Confirmar finalización de la sesión multiproyecto
+  Future<void> _confirmEndSession() async {
+    final bool? end = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.flag_circle, color: Color(0xFF10B981), size: 26),
+            SizedBox(width: 10),
+            Text('¿Finalizar Proyecto?', style: TextStyle(color: Colors.white, fontSize: 18)),
+          ],
+        ),
+        content: Text(
+          'Se han registrado exitosamente $_savedPhotosCount foto(s) para el proyecto "${widget.project.proyecto}".\n\n¿Deseas cerrar la sesión y regresar a la pantalla principal?',
+          style: const TextStyle(color: Colors.white70, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Continuar sesión', style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF10B981),
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Sí, Finalizar Proyecto'),
+          ),
+        ],
+      ),
+    );
+
+    if (end == true && mounted) {
+      Navigator.pop(context, true);
+    }
+  }
+
+  /// Muestra el Kit Técnico de Herramientas y Accesorios deducidos en tiempo real
+  void _showKitTecnicoSheet() {
+    final estructurasTags = _placedStickers
+        .where((s) => s.sticker.category == StickerCategory.estructuras)
+        .map((s) => s.sticker.title)
+        .toSet();
+
+    final materialesTags = _placedStickers
+        .where((s) => s.sticker.category == StickerCategory.materiales)
+        .map((s) => s.sticker.title)
+        .toSet();
+
+    final tools = TechnicalCatalogMatrix.deduceHerramientas(
+      estructuras: estructurasTags,
+      materiales: materialesTags,
+    );
+
+    final accessories = TechnicalCatalogMatrix.deduceAccesorios(
+      materiales: materialesTags,
+    );
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => Container(
+        height: MediaQuery.of(context).size.height * 0.75,
+        padding: const EdgeInsets.all(20),
+        decoration: const BoxDecoration(
+          color: Color(0xFF1E293B),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Row(
+                children: [
+                  const Icon(Icons.handyman, color: Color(0xFF38BDF8), size: 24),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'Kit Técnico Deducido (VISTEC V2)',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white54),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Herramientas y accesorios deducidos automáticamente a partir de los pines colocados en la Foto #$_sessionPhotoNumber',
+                style: const TextStyle(color: Colors.white60, fontSize: 12),
+              ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: ListView(
+                  children: [
+                    _buildKitSection(
+                      title: '🔩 Accesorios requeridos por Material (${accessories.length})',
+                      color: const Color(0xFF10B981),
+                      items: accessories,
+                      emptyText: 'Coloca pines de Material (Canaletas, Tubo PVC/EMT, etc.) para vincular accesorios automáticamente.',
+                    ),
+                    const SizedBox(height: 16),
+                    _buildKitSection(
+                      title: '🛠️ Herramientas requeridas (${tools.length})',
+                      color: const Color(0xFF38BDF8),
+                      items: tools,
+                      emptyText: 'Coloca pines de Estructura o Material para vincular herramientas de instalación.',
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildKitSection({
+    required String title,
+    required Color color,
+    required List<String> items,
+    required String emptyText,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F172A),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(width: 4, height: 16, color: color),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (items.isEmpty)
+            Text(
+              emptyText,
+              style: const TextStyle(
+                color: Colors.white38,
+                fontSize: 11,
+                fontStyle: FontStyle.italic,
+              ),
+            )
+          else
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: items.asMap().entries.map((e) {
+                return Chip(
+                  backgroundColor: const Color(0xFF1E293B),
+                  side: BorderSide(color: color.withValues(alpha: 0.3)),
+                  avatar: CircleAvatar(
+                    backgroundColor: color,
+                    radius: 9,
+                    child: Text(
+                      '${e.key + 1}',
+                      style: const TextStyle(
+                        color: Color(0xFF0F172A),
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  label: Text(
+                    e.value,
+                    style: const TextStyle(color: Colors.white, fontSize: 11),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+                );
+              }).toList(),
+            ),
+        ],
+      ),
+    );
+  }
+
   /// Guarda la foto fusionada localmente en la carpeta designada y la sincroniza con Excel/Drive
   Future<void> _saveAndSyncEvidence() async {
+    // 0. Solicitar nombre de Área / Sector opcional (o Foto #N por defecto)
+    final TextEditingController areaController = TextEditingController();
+    final bool? confirmSave = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(Icons.add_photo_alternate, color: Color(0xFF38BDF8), size: 24),
+            const SizedBox(width: 10),
+            Text(
+              'Guardar Foto #$_sessionPhotoNumber',
+              style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Proyecto: ${widget.project.proyecto}',
+              style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Nombre de Área / Sector (Opcional):',
+              style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+            ),
+            const SizedBox(height: 6),
+            TextField(
+              controller: areaController,
+              autofocus: true,
+              style: const TextStyle(color: Colors.white, fontSize: 13),
+              decoration: InputDecoration(
+                hintText: 'Ej. Fachada Principal (Defecto: Foto #$_sessionPhotoNumber)',
+                hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
+                filled: true,
+                fillColor: const Color(0xFF0F172A),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              ),
+            ),
+            const SizedBox(height: 14),
+            // Mini resumen de vinculaciones
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F172A),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFF334155)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '📍 Pines colocados: ${_placedStickers.length}',
+                    style: const TextStyle(
+                      color: Color(0xFF38BDF8),
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '🔩 Accesorios deducidos: ${TechnicalCatalogMatrix.deduceAccesorios(materiales: _placedStickers.where((s) => s.sticker.category == StickerCategory.materiales).map((s) => s.sticker.title)).length}',
+                    style: const TextStyle(color: Color(0xFF4ADE80), fontSize: 11),
+                  ),
+                  Text(
+                    '🛠️ Herramientas deducidas: ${TechnicalCatalogMatrix.deduceHerramientas(estructuras: _placedStickers.where((s) => s.sticker.category == StickerCategory.estructuras).map((s) => s.sticker.title), materiales: _placedStickers.where((s) => s.sticker.category == StickerCategory.materiales).map((s) => s.sticker.title)).length}',
+                    style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar', style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF10B981),
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Subir y Guardar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmSave != true) return;
+
+    final String finalAreaSector = areaController.text.trim().isEmpty
+        ? 'Foto #$_sessionPhotoNumber'
+        : areaController.text.trim();
+
     setState(() => _isProcessing = true);
 
     try {
@@ -494,7 +796,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
 
       Uint8List pngBytes = byteData.buffer.asUint8List();
 
-      // 2. Almacenar la imagen en la carpeta designada del dispositivo móvil
+      // 3. Almacenar la imagen en la carpeta designada del dispositivo móvil
       final Directory appDir = await getApplicationDocumentsDirectory();
       final Directory designatedFolder =
           Directory('${appDir.path}/${Constants.localFolderName}');
@@ -505,15 +807,18 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
       final String cleanContact = widget.project.contacto
           .replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_')
           .trim();
+      final String cleanArea = finalAreaSector
+          .replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_')
+          .trim();
       final String timestamp =
           DateTime.now().toIso8601String().replaceAll(RegExp(r'[^0-9]'), '');
-      final String localFileName = 'VISTEC_${cleanContact}_$timestamp.png';
+      final String localFileName = 'VISTEC_${cleanContact}_Foto${_sessionPhotoNumber}_${cleanArea}_$timestamp.png';
       final File localFile = File('${designatedFolder.path}/$localFileName');
       await localFile.writeAsBytes(pngBytes);
       final String localFilePath = localFile.path;
       debugPrint('Imagen guardada localmente en: $localFilePath');
 
-      // 3. Extraer etiquetas colocadas
+      // 4. Extraer etiquetas colocadas
       final List<String> peligrosTags = _placedStickers
           .where((s) => s.sticker.category == StickerCategory.peligros)
           .map((s) => s.sticker.title)
@@ -532,7 +837,17 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
           .toSet()
           .toList();
 
-      // 4. Preparar modelo con foto Base64 y ruta local
+      // 5. Deducir herramientas y accesorios automáticamente (VISTEC V2)
+      final List<String> deducedHerramientas = TechnicalCatalogMatrix.deduceHerramientas(
+        estructuras: estructurasTags,
+        materiales: materialesTags,
+      );
+
+      final List<String> deducedAccesorios = TechnicalCatalogMatrix.deduceAccesorios(
+        materiales: materialesTags,
+      );
+
+      // 6. Preparar modelo con foto Base64 y metadatos completos
       final String base64Image = base64Encode(pngBytes);
       final ProjectModel finalProject = widget.project.copyWith(
         fotoBase64: base64Image,
@@ -540,15 +855,19 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
         peligros: peligrosTags,
         estructuras: estructurasTags,
         materiales: materialesTags,
+        numFoto: _sessionPhotoNumber,
+        areaSector: finalAreaSector,
+        herramientas: deducedHerramientas,
+        accesorios: deducedAccesorios,
       );
 
-      // 5. Enviar a Google Apps Script para almacenar en Drive y registrar dirección en Excel
+      // 7. Enviar a Google Apps Script para almacenar en Drive y registrar en Excel
       final syncResult = await _sheetsService.syncProject(finalProject);
 
       if (!mounted) return;
 
       if (syncResult.isSuccess) {
-        // Mostrar diálogo de confirmación con la dirección de Drive y ruta local
+        // Mostrar diálogo de decisión de sesión (Siguiente Foto vs Finalizar Proyecto)
         await showDialog(
           context: context,
           barrierDismissible: false,
@@ -557,13 +876,15 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(20),
             ),
-            title: const Row(
+            title: Row(
               children: [
-                Icon(Icons.check_circle, color: Color(0xFF10B981), size: 28),
-                SizedBox(width: 10),
-                Text(
-                  '¡Evidencia Registrada!',
-                  style: TextStyle(color: Colors.white, fontSize: 18),
+                const Icon(Icons.check_circle, color: Color(0xFF10B981), size: 28),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '¡Foto #$_sessionPhotoNumber Registrada!',
+                    style: const TextStyle(color: Colors.white, fontSize: 18),
+                  ),
                 ),
               ],
             ),
@@ -572,51 +893,93 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(
-                    'La imagen con los stickers se ha guardado exitosamente:',
-                    style: TextStyle(color: Colors.white70, fontSize: 13),
+                  Text(
+                    'Sector: "$finalAreaSector" guardado exitosamente en el proyecto.',
+                    style: const TextStyle(color: Colors.white70, fontSize: 13),
                   ),
                   const SizedBox(height: 12),
                   _buildDetailRow(
                     icon: Icons.folder_special,
-                    label: 'Carpeta local designada:',
+                    label: 'Archivo local guardado:',
                     value: localFilePath,
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 8),
                   _buildDetailRow(
                     icon: Icons.table_chart,
-                    label: 'Archivo en Excel (Google Sheets):',
-                    value: 'Registrado en hoja "Proyectos_Terreno"',
+                    label: 'Google Sheets ("Proyectos_Terreno"):',
+                    value: 'Foto #$_sessionPhotoNumber • Accesorios: ${deducedAccesorios.length} • Herramientas: ${deducedHerramientas.length}',
                   ),
-                  const SizedBox(height: 10),
-                  _buildDetailRow(
-                    icon: Icons.location_on,
-                    label: 'Coordenadas GPS (Columna Mapa en Excel):',
-                    value: widget.project.mapa.isEmpty ? '0.0, 0.0' : widget.project.mapa,
-                  ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 8),
                   _buildDetailRow(
                     icon: Icons.cloud_done,
-                    label: 'Dirección en la nube (Drive):',
+                    label: 'Dirección en Drive:',
                     value: syncResult.message,
                   ),
+                  if (deducedAccesorios.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    _buildDetailRow(
+                      icon: Icons.category,
+                      label: 'Accesorios deducidos:',
+                      value: deducedAccesorios.join(', '),
+                    ),
+                  ],
+                  if (deducedHerramientas.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    _buildDetailRow(
+                      icon: Icons.handyman,
+                      label: 'Herramientas deducidas:',
+                      value: deducedHerramientas.join(', '),
+                    ),
+                  ],
                 ],
               ),
             ),
+            actionsAlignment: MainAxisAlignment.spaceBetween,
             actions: [
-              ElevatedButton(
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF10B981),
+                  side: const BorderSide(color: Color(0xFF10B981)),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                ),
+                icon: const Icon(Icons.flag, size: 18),
+                label: const Text('🏁 Finalizar Proyecto'),
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  Navigator.pop(context, true); // Retorna a form_screen indicando fin de proyecto
+                },
+              ),
+              ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF38BDF8),
                   foregroundColor: const Color(0xFF0F172A),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
                 ),
+                icon: const Icon(Icons.add_a_photo, size: 18),
+                label: const Text(
+                  '📸 Siguiente Foto',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
                 onPressed: () {
                   Navigator.pop(ctx);
-                  Navigator.pop(context, true); // Regresar al formulario principal
+                  setState(() {
+                    _savedPhotosCount++;
+                    _sessionPhotoNumber++;
+                    _capturedImageBytes = null;
+                    _placedStickers.clear();
+                    _resetZoom();
+                  });
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Listo para capturar Foto #$_sessionPhotoNumber'),
+                      backgroundColor: const Color(0xFF38BDF8),
+                      duration: const Duration(seconds: 2),
+                    ),
+                  );
                 },
-                child: const Text('Aceptar y Finalizar'),
               ),
             ],
           ),
@@ -693,16 +1056,38 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
       appBar: AppBar(
-        title: Text(
-          _capturedImageBytes == null
-              ? 'Cámara • Capturar Evidencia'
-              : 'Edición • Añadir Stickers',
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              _capturedImageBytes == null
+                  ? 'Cámara • Foto #$_sessionPhotoNumber'
+                  : 'Edición • Foto #$_sessionPhotoNumber',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            Text(
+              '${widget.project.proyecto} • Sesión ($_savedPhotosCount guardadas)',
+              style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 11),
+            ),
+          ],
         ),
         backgroundColor: const Color(0xFF1E293B),
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
+          if (_savedPhotosCount > 0)
+            TextButton.icon(
+              icon: const Icon(Icons.flag_circle, color: Color(0xFF10B981), size: 18),
+              label: const Text(
+                'Finalizar',
+                style: TextStyle(
+                  color: Color(0xFF10B981),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
+              ),
+              onPressed: _confirmEndSession,
+            ),
           IconButton(
             icon: const Icon(Icons.photo_library_outlined),
             tooltip: 'Cargar foto de la memoria / galería',
@@ -800,7 +1185,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Proyecto: ${widget.project.proyecto} | ${widget.project.contacto}',
+                    'Proyecto: ${widget.project.proyecto} • Foto #$_sessionPhotoNumber',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 13,
@@ -947,7 +1332,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                                         ),
                                         const SizedBox(width: 4),
                                         Text(
-                                          'VISTEC • ${widget.project.proyecto.toUpperCase()}',
+                                          'VISTEC • ${widget.project.proyecto.toUpperCase()} • FOTO #$_sessionPhotoNumber',
                                           style: const TextStyle(
                                             color: Colors.white,
                                             fontSize: 9.5,
@@ -1060,13 +1445,13 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                   onPressed: () => _openStickerSelector(
                     title: 'Añadir Pin #${_placedStickers.length + 1}',
                   ),
-                  icon: const Icon(Icons.add_location_alt_outlined, size: 20),
-                  label: const Text('Añadir Pin'),
+                  icon: const Icon(Icons.add_location_alt_outlined, size: 18),
+                  label: const Text('Pin'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF334155),
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
+                      horizontal: 10,
                       vertical: 12,
                     ),
                     shape: RoundedRectangleBorder(
@@ -1074,11 +1459,30 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
+
+                // Botón Kit Técnico
+                ElevatedButton.icon(
+                  onPressed: _showKitTecnicoSheet,
+                  icon: const Icon(Icons.handyman_outlined, size: 18, color: Color(0xFF38BDF8)),
+                  label: const Text('Kit', style: TextStyle(color: Color(0xFF38BDF8))),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0F172A),
+                    side: const BorderSide(color: Color(0xFF38BDF8), width: 1),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 12,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
 
                 // Botón Cargar otra foto de la memoria
                 IconButton(
-                  icon: const Icon(Icons.photo_library, color: Color(0xFF38BDF8), size: 24),
+                  icon: const Icon(Icons.photo_library, color: Colors.white70, size: 22),
                   tooltip: 'Cargar otra foto de la memoria (Galería)',
                   onPressed: _pickFromGallery,
                 ),
@@ -1098,14 +1502,14 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                         )
                       : const Icon(Icons.cloud_upload),
                   label: Text(
-                    _isProcessing ? 'Guardando...' : 'Guardar y Sincronizar',
+                    _isProcessing ? 'Guardando...' : 'Guardar Foto #$_sessionPhotoNumber',
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF10B981),
                     foregroundColor: Colors.white,
                     padding:
-                        const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),

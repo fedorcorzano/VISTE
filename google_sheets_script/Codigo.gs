@@ -17,12 +17,14 @@ function doPost(e) {
       return createJsonResponse({ status: "error", message: "Fallo al decodificar JSON: " + parseErr.toString() }, 400);
     }
 
-    // Acepta tanto 'contacto' como 'nombre' para compatibilidad con todas las pantallas de Flutter
+    // Datos del proyecto y sesión
     const contacto    = payload.contacto || payload.nombre || "N/A";
     const direccion   = payload.direccion || "N/A";
     const celular     = payload.celular || "N/A";
     const correo      = payload.correo || "N/A";
     const proyecto    = payload.proyecto || "General";
+    const numFoto     = payload.numFoto || 1;
+    const areaSector  = payload.areaSector || payload.area || ("Foto #" + numFoto);
     const fecha       = payload.fecha || Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
     const mapa        = payload.mapa || "0.0, 0.0";
     const responsable = payload.responsable || "Fedor Corzano";
@@ -31,6 +33,8 @@ function doPost(e) {
                           : (payload.peligros || (Array.isArray(payload.riesgos) ? payload.riesgos.join(", ") : payload.riesgos) || (Array.isArray(payload.ssoma) ? payload.ssoma.join(", ") : payload.ssoma) || "Ninguno");
     const estructuras = Array.isArray(payload.estructuras) ? payload.estructuras.join(", ") : (payload.estructuras || "N/A");
     const materiales  = Array.isArray(payload.materiales) ? payload.materiales.join(", ") : (payload.materiales || "N/A");
+    const herramientas = Array.isArray(payload.herramientas) ? payload.herramientas.join(", ") : (payload.herramientas || "N/A");
+    const accesorios  = Array.isArray(payload.accesorios) ? payload.accesorios.join(", ") : (payload.accesorios || "N/A");
     const fotoBase64  = payload.fotoBase64 || null;
 
     let fotoUrl = "SIN_FOTO";
@@ -39,7 +43,7 @@ function doPost(e) {
     // Guardar imagen en Google Drive si viene en Base64
     if (fotoBase64 && fotoBase64.length > 20) {
       try {
-        const driveRes = saveBase64ToDrive(fotoBase64, contacto);
+        const driveRes = saveBase64ToDrive(fotoBase64, contacto, areaSector);
         fotoUrl = driveRes.url;
         driveFileId = driveRes.fileId;
       } catch (err) {
@@ -52,7 +56,11 @@ function doPost(e) {
     let sheet = ss.getSheetByName(SHEET_NAME);
     if (!sheet) {
       sheet = ss.insertSheet(SHEET_NAME);
-      const defaultHeaders = ["CONTACTO", "DIRECCION", "CELULAR", "CORREO", "PROYECTO", "FECHA", "MAPA", "RESPONSABLE", "PELIGROS", "ESTRUCTURAS", "MATERIALES", "URL_FOTO"];
+      const defaultHeaders = [
+        "CONTACTO", "DIRECCION", "CELULAR", "CORREO", "PROYECTO",
+        "AREA_SECTOR", "FECHA", "MAPA", "RESPONSABLE", "PELIGROS",
+        "ESTRUCTURAS", "MATERIALES", "HERRAMIENTAS", "ACCESORIOS", "URL_FOTO"
+      ];
       sheet.appendRow(defaultHeaders);
       sheet.getRange(1, 1, 1, defaultHeaders.length).setBackground("#1E293B").setFontColor("#FFFFFF").setFontWeight("bold");
       sheet.setFrozenRows(1);
@@ -69,29 +77,39 @@ function doPost(e) {
     }
 
     const lastCol = Math.max(sheet.getLastColumn(), 1);
-    const rawHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-    const headerRow = rawHeaders.map(cleanHeader);
-    
-    // Detectar posiciones clave
-    const idxEstructuras = headerRow.findIndex(h => h.indexOf("ESTRUCTUR") !== -1);
-    let idxMateriales = headerRow.findIndex(h => h.indexOf("MATERIAL") !== -1);
-    let idxFoto = headerRow.findIndex(h => h.indexOf("FOTO") !== -1 || h.indexOf("EVIDENCIA") !== -1 || h.indexOf("URL") !== -1 || h.indexOf("LINK") !== -1);
-    
-    // 1. Si la hoja no tiene la columna MATERIALES pero tiene ESTRUCTURAS, la insertamos automáticamente
-    if (idxMateriales === -1 && idxEstructuras !== -1) {
-      sheet.insertColumnAfter(idxEstructuras + 1);
-      sheet.getRange(1, idxEstructuras + 2).setValue("MATERIALES").setBackground("#1E293B").setFontColor("#FFFFFF").setFontWeight("bold");
-      headerRow.splice(idxEstructuras + 1, 0, "MATERIALES");
-      // Recalcular idxFoto tras insertar columna
-      idxFoto = headerRow.findIndex(h => h.indexOf("FOTO") !== -1 || h.indexOf("EVIDENCIA") !== -1 || h.indexOf("URL") !== -1 || h.indexOf("LINK") !== -1);
+    let rawHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    let headerRow = rawHeaders.map(cleanHeader);
+
+    // Asegurar que las columnas nuevas existan dinámicamente
+    function ensureColumnExists(colName, afterColName) {
+      const cleanTarget = cleanHeader(colName);
+      if (!headerRow.some(h => h.indexOf(cleanTarget) !== -1)) {
+        let insertIdx = -1;
+        if (afterColName) {
+          const cleanAfter = cleanHeader(afterColName);
+          insertIdx = headerRow.findIndex(h => h.indexOf(cleanAfter) !== -1);
+        }
+        if (insertIdx !== -1) {
+          sheet.insertColumnAfter(insertIdx + 1);
+          sheet.getRange(1, insertIdx + 2).setValue(colName).setBackground("#1E293B").setFontColor("#FFFFFF").setFontWeight("bold");
+          headerRow.splice(insertIdx + 1, 0, cleanTarget);
+        } else {
+          const nextCol = sheet.getLastColumn() + 1;
+          sheet.getRange(1, nextCol).setValue(colName).setBackground("#1E293B").setFontColor("#FFFFFF").setFontWeight("bold");
+          headerRow.push(cleanTarget);
+        }
+      }
     }
 
-    // 2. Si la columna de Foto no existe (o fue reemplazada por Materiales), la añadimos al final
-    if (idxFoto === -1) {
-      const nextCol = headerRow.length + 1;
-      sheet.getRange(1, nextCol).setValue("URL_FOTO").setBackground("#1E293B").setFontColor("#FFFFFF").setFontWeight("bold");
-      headerRow.push("URL_FOTO");
-    }
+    ensureColumnExists("AREA_SECTOR", "PROYECTO");
+    ensureColumnExists("HERRAMIENTAS", "MATERIALES");
+    ensureColumnExists("ACCESORIOS", "HERRAMIENTAS");
+    ensureColumnExists("URL_FOTO");
+
+    // Re-leer cabeceras finales
+    const finalCols = Math.max(sheet.getLastColumn(), 1);
+    rawHeaders = sheet.getRange(1, 1, 1, finalCols).getValues()[0];
+    headerRow = rawHeaders.map(cleanHeader);
 
     // Mapa de valores según la cabecera
     const valueMap = {
@@ -105,6 +123,10 @@ function doPost(e) {
       "CORREO": correo,
       "EMAIL": correo,
       "PROYECTO": proyecto,
+      "AREA_SECTOR": areaSector,
+      "AREA": areaSector,
+      "SECTOR": areaSector,
+      "NUM_FOTO": numFoto,
       "FECHA": fecha,
       "MAPA": mapa,
       "GPS": mapa,
@@ -119,6 +141,10 @@ function doPost(e) {
       "ESTRUCTURA": estructuras,
       "MATERIALES": materiales,
       "MATERIAL": materiales,
+      "HERRAMIENTAS": herramientas,
+      "HERRAMIENTA": herramientas,
+      "ACCESORIOS": accesorios,
+      "ACCESORIO": accesorios,
       "URL_FOTO": fotoUrl,
       "FOTO": fotoUrl,
       "FOTOGRAFIA": fotoUrl,
@@ -142,12 +168,11 @@ function doPost(e) {
 
     return createJsonResponse({
       status: "success",
-      message: "Proyecto registrado exitosamente en Google Sheets y Drive.",
-      data: { row: sheet.getLastRow(), contacto: contacto, fotoUrl: fotoUrl, driveFileId: driveFileId }
+      message: "Evidencia #" + numFoto + " (" + areaSector + ") registrada exitosamente en Google Sheets y Drive.",
+      data: { row: sheet.getLastRow(), contacto: contacto, areaSector: areaSector, fotoUrl: fotoUrl, driveFileId: driveFileId }
     }, 200);
 
   } catch (err) {
-    // Si ocurre cualquier error inesperado, lo devolvemos como JSON legible para que Flutter no falle
     return createJsonResponse({ status: "error", message: "Excepción interna en Apps Script: " + err.toString() }, 500);
   } finally {
     try {
@@ -156,7 +181,7 @@ function doPost(e) {
   }
 }
 
-function saveBase64ToDrive(base64Data, contacto) {
+function saveBase64ToDrive(base64Data, contacto, areaSector) {
   let clean = base64Data;
   let mime = "image/png";
   if (base64Data.indexOf("data:") === 0) {
@@ -167,7 +192,9 @@ function saveBase64ToDrive(base64Data, contacto) {
   }
   const bytes = Utilities.base64Decode(clean);
   const time = Utilities.formatDate(new Date(), "GMT-5", "yyyyMMdd_HHmmss");
-  const fileName = "VIGILARTE_" + contacto.replace(/[^a-zA-Z0-9]/g, "_") + "_" + time + ".png";
+  const cleanContacto = contacto.replace(/[^a-zA-Z0-9]/g, "_");
+  const cleanArea = (areaSector || "Foto").replace(/[^a-zA-Z0-9]/g, "_");
+  const fileName = "VISTEC_" + cleanContacto + "_" + cleanArea + "_" + time + ".png";
   const blob = Utilities.newBlob(bytes, mime, fileName);
   
   let folder;
@@ -187,42 +214,157 @@ function saveBase64ToDrive(base64Data, contacto) {
   };
 }
 
+// Inicialización de pestañas técnicas maestras (si no existen en la hoja de cálculo)
+function initTechnicalTabs(ss) {
+  const materialesCols = [
+    "CANALETAS", "TUBO PVC SEL", "CORRUGADO PVC", "TUBO PVC SAP",
+    "TUBO EMT", "TUBO IMC", "CORRUGADO EMT", "CORRUGADO LIQUID TIGHT"
+  ];
+
+  const estructurasCols = [
+    "CONCRETO", "LADRILLO HUECO", "LADRILLO MACIZO", "DRYWALL",
+    "MAYOLICA", "VIDRIO", "FIERRO", "ACERO INOXIDABLE", "POLICARBONATO", "TEJA"
+  ];
+
+  // 1. Pestaña ACCESORIOS_MATERIAL
+  if (!ss.getSheetByName("ACCESORIOS_MATERIAL")) {
+    const s = ss.insertSheet("ACCESORIOS_MATERIAL");
+    s.appendRow(materialesCols);
+    s.getRange(1, 1, 1, materialesCols.length).setBackground("#14532D").setFontColor("#FFFFFF").setFontWeight("bold");
+    
+    // Accesorios prioritarios
+    const accData = [
+      ["Codos planos para canaleta", "Conectores PVC SEL", "Conectores corrugado PVC", "Conectores PVC SAP", "Conectores EMT rectos", "Conectores IMC roscados", "Conectores rectos flexible", "Conectores herméticos rectos"],
+      ["Uniones para canaleta", "Uniones PVC SEL", "Cajas de paso PVC", "Uniones PVC SAP", "Uniones EMT", "Uniones IMC roscadas", "Conectores curvos 90° flexible", "Conectores herméticos 90°"],
+      ["Ángulos internos/externos", "Curvas PVC SEL 90°", "Uniones corrugado", "Curvas PVC SAP 90°", "Abrazaderas Conduit/Unistrut", "Abrazaderas pesadas Unistrut", "Abrazaderas metálicas", "Empaquetaduras herméticas"],
+      ["Tees de derivación", "Cajas de paso PVC", "Cinta aislante/vulcanizada", "Cajas de paso SAP", "Curvas EMT 90° preformadas", "Cajas Conduit (Condulet)", "Uniones flexible a rígido", "Cajas de paso herméticas IP65/66"],
+      ["Tapas terminales", "Pegamento para PVC", "Abrazaderas plásticas", "Pegamento PVC alta presión", "Cajas de paso F°G°", "Boquillas y contratuercas", "", "Abrazaderas intemperie"],
+      ["Cinta doble contacto", "Abrazaderas tipo omega", "", "Abrazaderas metálicas U", "Boquillas terminales", "Sellador de roscas", "", ""],
+      ["Tarugos y tornillos", "", "", "", "Riel Unistrut", "", "", ""]
+    ];
+    accData.forEach(row => s.appendRow(row));
+    s.setFrozenRows(1);
+  }
+
+  // 2. Pestaña HERRAMIENTAS_MATERIAL
+  if (!ss.getSheetByName("HERRAMIENTAS_MATERIAL")) {
+    const s = ss.insertSheet("HERRAMIENTAS_MATERIAL");
+    s.appendRow(materialesCols);
+    s.getRange(1, 1, 1, materialesCols.length).setBackground("#047857").setFontColor("#FFFFFF").setFontWeight("bold");
+
+    const toolMatData = [
+      ["Tijera cortacanaletas/Ingletadora", "Sierra/Cortador PVC", "Cúter/Cuchilla", "Cortatubos PVC/Sierra arco", "Doblador tubo EMT (Curvadora)", "Terraja roscadora IMC", "Sierra metal diente fino", "Cúter/Sierra cubierta plástica"],
+      ["Nivel de mano/Láser", "Soplete/Decapador térmico", "Guía pasacables nylon", "Soplete/Pistola calor", "Sierra para metales/Cortatubos", "Prensa de cadena/Tornillo banco", "Alicate pelacables/corte", "Llave inglesa/francesa hermética"],
+      ["Taladro percutor/Atornillador", "Taladro/Atornillador", "Cinta métrica", "Taladro percutor", "Escariador tubo EMT", "Cortatubos metal pesado", "Destornillador plano/cruz", "Guía pasacables de acero"],
+      ["Cinta métrica/Flexómetro", "Escariador/Lima", "Alicate universal", "Escariador", "Taladro percutor con brocas", "Curvadora hidráulica IMC", "Guía pasacables", "Destornillador"],
+      ["Lima para desbaste", "Flexómetro", "", "Nivel de gota", "Atornillador de impacto", "Llave Stilson", "", ""],
+      ["", "", "", "", "Nivel torpedo magnético", "Aceite para roscar", "", ""],
+      ["", "", "", "", "Flexómetro", "Taladro percutor", "", ""]
+    ];
+    toolMatData.forEach(row => s.appendRow(row));
+    s.setFrozenRows(1);
+  }
+
+  // 3. Pestaña HERRAMIENTAS_ESTRUCTURA
+  const structSheetName = ss.getSheetByName("HERRAMIENTAS_ESTRUCTURA") ? "HERRAMIENTAS_ESTRUCTURA" : (ss.getSheetByName("HERRAMIENTAS ESTRUCTURA") ? "HERRAMIENTAS ESTRUCTURA" : null);
+  if (!structSheetName) {
+    const s = ss.insertSheet("HERRAMIENTAS_ESTRUCTURA");
+    s.appendRow(estructurasCols);
+    s.getRange(1, 1, 1, estructurasCols.length).setBackground("#0369A1").setFontColor("#FFFFFF").setFontWeight("bold");
+
+    const toolStructData = [
+      ["Rotomartillo SDS Plus/Max", "Taladro percusión suave/sin percusión", "Rotomartillo/Taladro percutor", "Atornillador inalámbrico drywall", "Broca diamantada/carburo tungsteno", "Ventosas dobles sujeción vidrio", "Taladro brocas metal HSS/Cobalto", "Brocas especiales Cobalto HSS-Co", "Sierra caladora diente fino plástico", "Amoladora disco diamantado continuo"],
+      ["Brocas SDS percusión concreto", "Brocas para ladrillo hueco", "Brocas para mampostería maciza", "Cúter profesional/Serrucho yeso", "Taladro vel. variable (sin percusión)", "Pistola calafateo silicona estructural", "Amoladora angular corte/desbaste", "Amoladora discos para inox", "Taladro broca acrílico/plástico", "Taladro brocas cerámica/teja"],
+      ["Cincel plano/Punta demoledora", "Atornillador torque regulable", "Cincel de desbaste", "Puntas Phillips PH2 con tope", "Rociador agua (refrigeración)", "Rascador/Cúter de precisión", "Remachadora manual/neumática", "Pasta decapante/limpiador inox", "Cúter resistente", "Cincel fino manual"],
+      ["Llave impacto/Llaves de dado", "Nivel de mano", "Martillo", "Nivel magnético", "Cinta masking tape (anti-desliz)", "Paño microfibra y limpiador", "Llaves de corona/fijas", "Taladro baja vel. con lubricante", "Pistola de silicona neutra", "Pistola calafateo sellador poliuretano"],
+      ["Martillo/Comba pequeña", "", "", "Detector de perfiles metálicos", "Nivel de gota", "", "Punzón de centro/Granete", "Llaves especiales para inox", "", ""],
+      ["Extensión eléctrica industrial", "", "", "", "", "", "Cepillo de alambre", "", "", ""]
+    ];
+    toolStructData.forEach(row => s.appendRow(row));
+    s.setFrozenRows(1);
+  }
+}
+
+// Obtener mapa de columnas y sus elementos prioritarios
+function getSheetColumnsMap(ss, sheetName) {
+  let sheet = ss.getSheetByName(sheetName);
+  if (!sheet && sheetName === "HERRAMIENTAS_ESTRUCTURA") {
+    sheet = ss.getSheetByName("HERRAMIENTAS ESTRUCTURA");
+  }
+  if (!sheet) return {};
+  const data = sheet.getDataRange().getValues();
+  if (data.length < 1) return {};
+  const headers = data[0];
+  const map = {};
+  for (let col = 0; col < headers.length; col++) {
+    const colName = headers[col] ? headers[col].toString().trim() : "";
+    if (!colName) continue;
+    const items = [];
+    for (let row = 1; row < data.length; row++) {
+      const val = data[row][col] ? data[row][col].toString().trim() : "";
+      if (val) {
+        items.push(val);
+      }
+    }
+    map[colName] = items;
+  }
+  return map;
+}
+
 function doGet(e) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   
-  // Función auxiliar para leer una columna entera de una pestaña específica (ignorando la cabecera)
+  // Asegurar que las pestañas técnicas existan
+  try {
+    initTechnicalTabs(ss);
+  } catch (initErr) {
+    console.warn("No se pudieron inicializar automáticamente las pestañas:", initErr);
+  }
+
+  // Función auxiliar para leer una columna entera de una pestaña simple
   function getColumnData(sheetName) {
     const sheet = ss.getSheetByName(sheetName);
     if (!sheet) return [];
     const rows = sheet.getDataRange().getValues();
     let list = [];
-    // Empezamos desde la fila 1 (asumiendo cabecera en fila 0)
     for (let i = 1; i < rows.length; i++) {
-      if (rows[i][0]) { // Si la celda no está vacía
+      if (rows[i][0]) {
         list.push(rows[i][0].toString().trim());
       }
     }
     return list;
   }
 
-  // Recolectar las listas de cada pestaña respetando nombres exactos de hojas
   const listaPeligros = getColumnData("Peligros");
   const peligrosFinal = listaPeligros.length > 0 ? listaPeligros : getColumnData("Riesgos");
 
+  const accesoriosMaterial = getSheetColumnsMap(ss, "ACCESORIOS_MATERIAL");
+  const herramientasMaterial = getSheetColumnsMap(ss, "HERRAMIENTAS_MATERIAL");
+  const herramientasEstructura = getSheetColumnsMap(ss, "HERRAMIENTAS_ESTRUCTURA");
+
+  // Materiales y estructuras pueden provenir de las cabeceras de las pestañas técnicas o de pestañas simples
+  const matKeys = Object.keys(accesoriosMaterial).length > 0 
+                    ? Object.keys(accesoriosMaterial) 
+                    : (Object.keys(herramientasMaterial).length > 0 ? Object.keys(herramientasMaterial) : getColumnData("Materiales"));
+
+  const structKeys = Object.keys(herramientasEstructura).length > 0 
+                      ? Object.keys(herramientasEstructura) 
+                      : getColumnData("Estructuras");
+
   const data = {
     proyectos: getColumnData("Proyectos"),
-    estructuras: getColumnData("Estructuras"),
-    materiales: getColumnData("Materiales"),
+    estructuras: structKeys,
+    materiales: matKeys,
     peligros: peligrosFinal,
-    riesgos: peligrosFinal
+    riesgos: peligrosFinal,
+    accesoriosMaterial: accesoriosMaterial,
+    herramientasMaterial: herramientasMaterial,
+    herramientasEstructura: herramientasEstructura
   };
 
   return createJsonResponse(data, 200);
 }
 
-/**
- * Función auxiliar para generar respuestas JSON compatibles con Google Apps Script
- */
 function createJsonResponse(data, statusCode) {
   if (statusCode && typeof data === "object" && !Array.isArray(data) && !data.statusCode) {
     data.statusCode = statusCode;
@@ -230,3 +372,4 @@ function createJsonResponse(data, statusCode) {
   return ContentService.createTextOutput(JSON.stringify(data))
     .setMimeType(ContentService.MimeType.JSON);
 }
+

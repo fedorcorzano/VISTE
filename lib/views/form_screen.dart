@@ -468,12 +468,12 @@ class _FormScreenState extends State<FormScreen> {
                       ),
                 const SizedBox(height: 30),
 
-                // Botón Siguiente: Avanzar a Cámara
+                // Botón Siguiente: Avanzar a Sesión de Fotos
                 ElevatedButton.icon(
                   onPressed: _avanzarACamara,
-                  icon: const Icon(Icons.camera_alt, size: 22),
+                  icon: const Icon(Icons.photo_camera, size: 22),
                   label: const Text(
-                    'Siguiente: Abrir Cámara 📸',
+                    'Iniciar Sesión de Fotos (Proyecto) 📸',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
@@ -491,12 +491,12 @@ class _FormScreenState extends State<FormScreen> {
                 ),
                 const SizedBox(height: 12),
 
-                // Botón Alternativo: Subir Foto de la Memoria / Galería
+                // Botón Alternativo: Iniciar Sesión con Foto de la Galería
                 OutlinedButton.icon(
                   onPressed: _avanzarConGaleria,
                   icon: const Icon(Icons.photo_library_outlined, size: 20, color: Color(0xFF38BDF8)),
                   label: const Text(
-                    'Subir Foto de la Memoria (Galería) 📁',
+                    'Iniciar Sesión con Foto de Galería 📁',
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,

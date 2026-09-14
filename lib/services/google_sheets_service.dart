@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import '../config/constants.dart';
 import '../models/project_model.dart';
+import '../models/sticker_model.dart';
 
 class GoogleSheetsService {
   String get _webAppUrl => Constants.googleScriptUrl;
@@ -52,41 +53,83 @@ class GoogleSheetsService {
     }
   }
 
-  // 2. Obtener catálogos (Proyectos, Estructuras, Materiales, Peligros)
+  // 2. Obtener catálogos (Proyectos, Estructuras, Materiales, Peligros, Herramientas, Accesorios)
   Future<Map<String, List<String>>> fetchCatalogs() async {
     try {
       final response = await http.get(Uri.parse(_webAppUrl));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
+
+        // Actualizar matrices personalizadas si vienen del servidor
+        if (data is Map) {
+          if (data['accesoriosMaterial'] is Map) {
+            final Map<String, dynamic> raw = data['accesoriosMaterial'];
+            TechnicalCatalogMatrix.accesoriosMaterialOverride = raw.map(
+              (k, v) => MapEntry(k, List<String>.from(v ?? [])),
+            );
+          }
+          if (data['herramientasMaterial'] is Map) {
+            final Map<String, dynamic> raw = data['herramientasMaterial'];
+            TechnicalCatalogMatrix.herramientasMaterialOverride = raw.map(
+              (k, v) => MapEntry(k, List<String>.from(v ?? [])),
+            );
+          }
+          if (data['herramientasEstructura'] is Map) {
+            final Map<String, dynamic> raw = data['herramientasEstructura'];
+            TechnicalCatalogMatrix.herramientasEstructuraOverride = raw.map(
+              (k, v) => MapEntry(k, List<String>.from(v ?? [])),
+            );
+          }
+        }
+
+        final List<String> serverEstructuras = List<String>.from(
+          data['Estructuras'] ?? data['estructuras'] ?? [],
+        );
+        final List<String> serverMateriales = List<String>.from(
+          data['Materiales'] ?? data['materiales'] ?? [],
+        );
+
         return {
           'proyectos': List<String>.from(
             data['Proyectos'] ?? data['proyectos'] ?? [],
           ),
-          'estructuras': List<String>.from(
-            data['Estructuras'] ?? data['estructuras'] ?? [],
-          ),
-          'materiales': List<String>.from(
-            data['Materiales'] ?? data['materiales'] ?? [],
-          ),
+          'estructuras': serverEstructuras.isNotEmpty
+              ? serverEstructuras
+              : TechnicalCatalogMatrix.defaultEstructuras,
+          'materiales': serverMateriales.isNotEmpty
+              ? serverMateriales
+              : TechnicalCatalogMatrix.defaultMateriales,
           'peligros': List<String>.from(
             data['Peligros'] ??
                 data['peligros'] ??
                 data['Riesgos'] ??
                 data['riesgos'] ??
-                [],
+                [
+                  'Riesgo Eléctrico',
+                  'Caída a distinto nivel',
+                  'Espacio Confinado',
+                  'Corte / Atrapamiento',
+                  'Piso Resbaladizo',
+                ],
           ),
         };
       }
     } catch (e) {
-      debugPrint('Error al cargar catálogos: $e');
+      debugPrint('Error al cargar catálogos desde Apps Script: $e');
     }
 
-    // Listas por defecto en caso de que no haya internet o falle la conexión
+    // Listas por defecto con los materiales y estructuras oficiales de VISTEC
     return {
-      'proyectos': ['Proyecto por Defecto'],
-      'estructuras': ['Ladrillo', 'Concreto', 'Madera', 'Metal'],
-      'materiales': ['tubo PVC', 'Cable UTP'],
-      'peligros': ['Riesgo Eléctrico'],
+      'proyectos': ['Cámaras de videovigilancia', 'Canalizaciones y Redes', 'General'],
+      'estructuras': TechnicalCatalogMatrix.defaultEstructuras,
+      'materiales': TechnicalCatalogMatrix.defaultMateriales,
+      'peligros': [
+        'Riesgo Eléctrico',
+        'Caída a distinto nivel',
+        'Espacio Confinado',
+        'Corte / Atrapamiento',
+        'Piso Resbaladizo',
+      ],
     };
   }
 }
