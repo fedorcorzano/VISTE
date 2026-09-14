@@ -668,10 +668,65 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
 
   /// Guarda la foto fusionada localmente en la carpeta designada y la sincroniza con Excel/Drive
   Future<void> _saveAndSyncEvidence() async {
-    // 0. Solicitar nombre de Área / Sector opcional (o Foto #N por defecto)
+    // 1. Asegurar que no haya teclados abiertos y restablecer zoom al encuadre completo al 100%
+    FocusManager.instance.primaryFocus?.unfocus();
+    _resetZoom();
+    await Future.delayed(const Duration(milliseconds: 80));
+    if (!mounted) return;
+
+    // 2. Renderizar la imagen combinada con los stickers a resolución completa garantizada (1549 x 2560)
+    // Se captura ANTES de abrir el diálogo de sector para que el teclado en pantalla no comprima el viewport vertical
+    RenderRepaintBoundary? boundary = _repaintBoundaryKey.currentContext
+        ?.findRenderObject() as RenderRepaintBoundary?;
+
+    if (boundary == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo encontrar el contexto visual para renderizar.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Esperar si la altura estuviese comprimida momentáneamente
+    int retries = 0;
+    while (boundary.size.height < 500 && retries < 10) {
+      await Future.delayed(const Duration(milliseconds: 50));
+      retries++;
+    }
+    if (!mounted) return;
+
+    // Calcular escala exacta para garantizar siempre la resolución completa de 1549 x 2560
+    final double targetRatio = (boundary.size.height > 0)
+        ? (2560.0 / boundary.size.height)
+        : 4.2;
+
+    Uint8List pngBytes;
+    try {
+      ui.Image image = await boundary.toImage(pixelRatio: targetRatio);
+      ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) {
+        throw Exception('Error al codificar imagen combinada en PNG.');
+      }
+      pngBytes = byteData.buffer.asUint8List();
+      debugPrint('Imagen capturada con resolución garantizada: ${image.width} x ${image.height}');
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al renderizar imagen: $e'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+
+    // 3. Solicitar nombre de Área / Sector opcional (o Foto #N por defecto)
     final TextEditingController areaController = TextEditingController();
     final bool? confirmSave = await showDialog<bool>(
       context: context,
+      barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1E293B),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -775,26 +830,6 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
     setState(() => _isProcessing = true);
 
     try {
-      // 1. Restablecer el zoom para renderizar el encuadre completo al 100%
-      _resetZoom();
-      await Future.delayed(const Duration(milliseconds: 100));
-
-      // 2. Renderizar la imagen combinada con los stickers en alta resolución
-      RenderRepaintBoundary? boundary = _repaintBoundaryKey.currentContext
-          ?.findRenderObject() as RenderRepaintBoundary?;
-
-      if (boundary == null) {
-        throw Exception('No se pudo encontrar el contexto visual para renderizar.');
-      }
-
-      ui.Image image = await boundary.toImage(pixelRatio: 4.2);
-      ByteData? byteData =
-          await image.toByteData(format: ui.ImageByteFormat.png);
-      if (byteData == null) {
-        throw Exception('Error al codificar imagen combinada en PNG.');
-      }
-
-      Uint8List pngBytes = byteData.buffer.asUint8List();
 
       // 3. Almacenar la imagen en la carpeta designada del dispositivo móvil
       final Directory appDir = await getApplicationDocumentsDirectory();
