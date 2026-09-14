@@ -70,29 +70,63 @@ class PlacedSticker {
 class TechnicalCatalogMatrix {
   // Lista oficial de materiales de canalización / tubería
   static const List<String> defaultMateriales = [
-    'CANALETAS',
-    'TUBO PVC SEL',
-    'CORRUGADO PVC',
-    'TUBO PVC SAP',
-    'TUBO EMT',
-    'TUBO IMC',
-    'CORRUGADO EMT',
-    'CORRUGADO LIQUID TIGHT',
+    'Canaletas',
+    'Tubo PVC SEL',
+    'Corrugado PVC',
+    'Tubo PVC SAP',
+    'Tubo EMT',
+    'Tubo IMC',
+    'Corrugado EMT',
+    'Corrugado Liquid Tight',
   ];
 
   // Lista oficial de estructuras más comunes en campo
   static const List<String> defaultEstructuras = [
-    'CONCRETO',
-    'LADRILLO HUECO',
-    'LADRILLO MACIZO',
-    'DRYWALL',
-    'MAYOLICA',
-    'VIDRIO',
-    'FIERRO',
-    'ACERO INOXIDABLE',
-    'POLICARBONATO',
-    'TEJA',
+    'Concreto',
+    'Ladrillo Hueco',
+    'Ladrillo Macizo',
+    'Drywall',
+    'Mayólica',
+    'Vidrio',
+    'Fierro',
+    'Acero Inoxidable',
+    'Policarbonato',
+    'Teja',
   ];
+
+  /// Formatea cadenas a formato tipo título preservando siglas técnicas (PVC, EMT, IMC, etc.)
+  static String formatTitleCase(String text) {
+    if (text.trim().isEmpty) return '';
+    const acronyms = {
+      'PVC',
+      'SEL',
+      'SAP',
+      'EMT',
+      'IMC',
+      'SDS',
+      'IP65',
+      'IP66',
+      'F°G°',
+      'LED',
+      'HDPE',
+      'UTP',
+      'CCTV',
+    };
+
+    final words = text.trim().split(RegExp(r'\s+'));
+    return words.map((w) {
+      final upper = w.toUpperCase();
+      if (acronyms.contains(upper)) {
+        return upper;
+      }
+      if (w.isEmpty) return '';
+      final lower = w.toLowerCase();
+      if (lower == 'de' || lower == 'para' || lower == 'con' || lower == 'en' || lower == 'y') {
+        return lower;
+      }
+      return w[0].toUpperCase() + w.substring(1).toLowerCase();
+    }).join(' ');
+  }
 
   // Accesorios prioritarios por material (orden descendente de prioridad)
   static const Map<String, List<String>> accesoriosMaterial = {

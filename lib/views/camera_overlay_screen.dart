@@ -827,13 +827,13 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
 
       final List<String> estructurasTags = _placedStickers
           .where((s) => s.sticker.category == StickerCategory.estructuras)
-          .map((s) => s.sticker.title)
+          .map((s) => TechnicalCatalogMatrix.formatTitleCase(s.sticker.title))
           .toSet()
           .toList();
 
       final List<String> materialesTags = _placedStickers
           .where((s) => s.sticker.category == StickerCategory.materiales)
-          .map((s) => s.sticker.title)
+          .map((s) => TechnicalCatalogMatrix.formatTitleCase(s.sticker.title))
           .toSet()
           .toList();
 
