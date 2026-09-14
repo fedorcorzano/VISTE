@@ -1,11 +1,19 @@
 import 'dart:typed_data';
+import 'package:http/http.dart' as http;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../models/session_evidence_model.dart';
 
 class ClientReportPdfService {
-  /// Genera el reporte formal exclusivo para el cliente (SOLO condiciones de seguridad SST y Equipos cotizados)
-  static Future<Uint8List> generatePdf(ProjectSessionModel session) async {
+  /// Genera el reporte formal exclusivo para el cliente con:
+  /// 1. Carátula ejecutiva con Logo VIGILARTE, Nombre del proyecto, Fecha,
+  ///    Persona a cargo de la visita y Mapa cuadrado satelital georreferenciado con pin.
+  /// 2. Resumen ejecutivo de condiciones de seguridad SST y Equipamiento cotizado.
+  /// 3. Evidencias fotográficas con SOLO marcadores de Seguridad / SST.
+  static Future<Uint8List> generatePdf(
+    ProjectSessionModel session, {
+    Uint8List? preloadedSatelliteMap,
+  }) async {
     final pdf = pw.Document();
 
     const primaryColor = PdfColor.fromInt(0xFF0F172A); // Slate 900
@@ -14,10 +22,190 @@ class ClientReportPdfService {
     const lightBg = PdfColor.fromInt(0xFFF8FAFC);
     const borderGray = PdfColor.fromInt(0xFFE2E8F0);
 
+    // 0. Obtener mapa satelital para la carátula
+    final coords = _parseCoordinates(session.project.mapa);
+    Uint8List? satelliteMapBytes = preloadedSatelliteMap;
+    if (satelliteMapBytes == null && coords != null) {
+      satelliteMapBytes = await _fetchSatelliteMap(coords.$1, coords.$2);
+    }
+
     final hazardsByArea = session.getHazardsByArea();
     final allHazards = session.getConsolidatedHazards();
 
+    // =========================================================================
+    // 0. PÁGINA DE CARÁTULA EJECUTIVA FORMAL PARA EL CLIENTE
+    // =========================================================================
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.symmetric(horizontal: 36, vertical: 32),
+        build: (pw.Context context) {
+          return pw.Container(
+            decoration: pw.BoxDecoration(
+              border: pw.Border.all(color: const PdfColor.fromInt(0xFFCBD5E1), width: 1.2),
+              borderRadius: pw.BorderRadius.circular(8),
+            ),
+            padding: const pw.EdgeInsets.symmetric(horizontal: 24, vertical: 22),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.center,
+              children: [
+                // Top Header: Logo VIGILARTE & Badge
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: pw.CrossAxisAlignment.center,
+                  children: [
+                    _buildVigilarteLogo(),
+                    pw.Container(
+                      padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: pw.BoxDecoration(
+                        color: const PdfColor.fromInt(0xFF0284C7),
+                        borderRadius: pw.BorderRadius.circular(4),
+                      ),
+                      child: pw.Text(
+                        'ENTREGABLE CLIENTE',
+                        style: pw.TextStyle(
+                          color: PdfColors.white,
+                          fontSize: 7.5,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                pw.SizedBox(height: 12),
+
+                // Accent dividing line (Navy + Sky Blue + Emerald)
+                pw.Row(
+                  children: [
+                    pw.Expanded(
+                      flex: 3,
+                      child: pw.Container(height: 3, color: const PdfColor.fromInt(0xFF0F172A)),
+                    ),
+                    pw.Expanded(
+                      flex: 2,
+                      child: pw.Container(height: 3, color: const PdfColor.fromInt(0xFF0284C7)),
+                    ),
+                    pw.Expanded(
+                      flex: 1,
+                      child: pw.Container(height: 3, color: const PdfColor.fromInt(0xFF10B981)),
+                    ),
+                  ],
+                ),
+                pw.SizedBox(height: 16),
+
+                // Document Title
+                pw.Text(
+                  'INFORME TECNICO DE INSPECCION',
+                  style: pw.TextStyle(
+                    color: const PdfColor.fromInt(0xFF0F172A),
+                    fontSize: 16,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                  textAlign: pw.TextAlign.center,
+                ),
+                pw.SizedBox(height: 4),
+                pw.Text(
+                  'CONDICIONES DE SEGURIDAD SST Y PROPUESTA DE EQUIPAMIENTO',
+                  style: const pw.TextStyle(
+                    color: PdfColor.fromInt(0xFF0284C7),
+                    fontSize: 9.5,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                  textAlign: pw.TextAlign.center,
+                ),
+                pw.SizedBox(height: 14),
+
+                // Executive Metadata Card
+                pw.Container(
+                  width: double.infinity,
+                  padding: const pw.EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: pw.BoxDecoration(
+                    color: const PdfColor.fromInt(0xFFF8FAFC),
+                    borderRadius: pw.BorderRadius.circular(6),
+                    border: pw.Border.all(color: const PdfColor.fromInt(0xFFE2E8F0)),
+                  ),
+                  child: pw.Column(
+                    children: [
+                      _buildCoverMetaRow('Proyecto:', session.project.proyecto, isBold: true),
+                      pw.SizedBox(height: 5),
+                      _buildCoverMetaRow('Fecha de Visita:', session.project.fecha),
+                      pw.SizedBox(height: 5),
+                      _buildCoverMetaRow(
+                        'A Cargo de la Visita:',
+                        session.project.responsable.isNotEmpty
+                            ? session.project.responsable
+                            : (session.project.contacto.isNotEmpty ? session.project.contacto : 'Fedor Corzano'),
+                        isAccent: true,
+                      ),
+                      pw.SizedBox(height: 5),
+                      _buildCoverMetaRow('Cliente / Contacto:', session.project.contacto),
+                      if (session.project.direccion.isNotEmpty) ...[
+                        pw.SizedBox(height: 5),
+                        _buildCoverMetaRow('Direccion:', session.project.direccion),
+                      ],
+                    ],
+                  ),
+                ),
+                pw.SizedBox(height: 14),
+
+                // Map Section Title
+                pw.Text(
+                  'UBICACION GEORREFERENCIADA DEL PROYECTO (MODO SATELITAL)',
+                  style: pw.TextStyle(
+                    color: const PdfColor.fromInt(0xFF0F172A),
+                    fontSize: 8.5,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+                pw.SizedBox(height: 8),
+
+                // Square Satellite Map with Centered Position Marker
+                _buildSatelliteMapWidget(
+                  satelliteBytes: satelliteMapBytes,
+                  lat: coords?.$1,
+                  lng: coords?.$2,
+                ),
+
+                pw.Spacer(),
+
+                // Bottom Footer
+                pw.Container(
+                  padding: const pw.EdgeInsets.only(top: 8),
+                  decoration: const pw.BoxDecoration(
+                    border: pw.Border(top: pw.BorderSide(color: PdfColor.fromInt(0xFFE2E8F0), width: 1)),
+                  ),
+                  child: pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    children: [
+                      pw.Text(
+                        'VIGILARTE - Seguridad Electronica & Infraestructura',
+                        style: const pw.TextStyle(color: PdfColors.grey600, fontSize: 7.5),
+                      ),
+                      pw.Text(
+                        'Elaborado por Fedor Corzano',
+                        style: pw.TextStyle(
+                          color: const PdfColor.fromInt(0xFF0F172A),
+                          fontSize: 7.5,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
+                      ),
+                      pw.Text(
+                        'Documento Confidencial',
+                        style: const pw.TextStyle(color: PdfColors.grey500, fontSize: 7.5),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+
+    // =========================================================================
     // 1. PÁGINA DE RESUMEN EJECUTIVO DE SEGURIDAD SST Y EQUIPOS
+    // =========================================================================
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
@@ -476,7 +664,366 @@ class ClientReportPdfService {
         style: pw.TextStyle(
           fontSize: 8,
           fontWeight: pw.FontWeight.bold,
-          color: PdfColor.fromInt(0xFF0F172A),
+          color: const PdfColor.fromInt(0xFF0F172A),
+        ),
+      ),
+    );
+  }
+
+  // =========================================================================
+  // HELPER METHODS PARA CARÁTULA Y MAPA SATELITAL
+  // =========================================================================
+
+  /// Parsea coordenadas en formato "lat, lng" o URL
+  static (double, double)? _parseCoordinates(String mapa) {
+    if (mapa.isEmpty || mapa == '0.0, 0.0') return null;
+    final match = RegExp(r'(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)').firstMatch(mapa);
+    if (match != null) {
+      final lat = double.tryParse(match.group(1)!);
+      final lng = double.tryParse(match.group(2)!);
+      if (lat != null && lng != null && (lat != 0.0 || lng != 0.0)) {
+        return (lat, lng);
+      }
+    }
+    return null;
+  }
+
+  /// Descarga imagen satelital ArcGIS World Imagery centrada en el proyecto
+  static Future<Uint8List?> _fetchSatelliteMap(double lat, double lng) async {
+    try {
+      const delta = 0.0035; // Nivel de zoom aproximado 17-18
+      final minLon = lng - delta;
+      final maxLon = lng + delta;
+      final minLat = lat - delta;
+      final maxLat = lat + delta;
+
+      final url =
+          'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export'
+          '?bbox=$minLon,$minLat,$maxLon,$maxLat&bboxSR=4326&imageSR=4326&size=600,600&format=jpg&f=image';
+
+      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 5));
+      if (response.statusCode == 200 && response.bodyBytes.length > 1000) {
+        return response.bodyBytes;
+      }
+    } catch (_) {
+      // Fallback a gráfico vectorial satelital si se encuentra sin conexión o timeout
+    }
+    return null;
+  }
+
+  /// Genera el Logo corporativo de VIGILARTE en alta fidelidad vectorial
+  static pw.Widget _buildVigilarteLogo() {
+    return pw.Row(
+      mainAxisSize: pw.MainAxisSize.min,
+      children: [
+        // Emblema con lente de seguridad
+        pw.Container(
+          width: 38,
+          height: 38,
+          decoration: pw.BoxDecoration(
+            color: const PdfColor.fromInt(0xFF0F172A), // Slate 900
+            borderRadius: pw.BorderRadius.circular(8),
+            border: pw.Border.all(color: const PdfColor.fromInt(0xFF0284C7), width: 1.5),
+          ),
+          child: pw.Center(
+            child: pw.Stack(
+              alignment: pw.Alignment.center,
+              children: [
+                pw.Container(
+                  width: 22,
+                  height: 22,
+                  decoration: pw.BoxDecoration(
+                    shape: pw.BoxShape.circle,
+                    border: pw.Border.all(color: const PdfColor.fromInt(0xFF38BDF8), width: 1.5),
+                  ),
+                ),
+                pw.Container(
+                  width: 10,
+                  height: 10,
+                  decoration: const pw.BoxDecoration(
+                    color: PdfColor.fromInt(0xFF10B981), // Emerald 500
+                    shape: pw.BoxShape.circle,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        pw.SizedBox(width: 10),
+        pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          mainAxisSize: pw.MainAxisSize.min,
+          children: [
+            pw.Text(
+              'V I G I L A R T E',
+              style: pw.TextStyle(
+                color: const PdfColor.fromInt(0xFF0F172A),
+                fontSize: 16,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+            pw.SizedBox(height: 1),
+            pw.Text(
+              'SEGURIDAD ELECTRONICA & INFRAESTRUCTURA',
+              style: const pw.TextStyle(
+                color: PdfColor.fromInt(0xFF0284C7),
+                fontSize: 6.5,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// Fila de metadata para la carátula
+  static pw.Widget _buildCoverMetaRow(
+    String label,
+    String value, {
+    bool isBold = false,
+    bool isAccent = false,
+  }) {
+    return pw.Row(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.SizedBox(
+          width: 135,
+          child: pw.Text(
+            label,
+            style: pw.TextStyle(
+              fontSize: 8.5,
+              fontWeight: pw.FontWeight.bold,
+              color: const PdfColor.fromInt(0xFF475569),
+            ),
+          ),
+        ),
+        pw.Expanded(
+          child: pw.Text(
+            value.isEmpty ? 'Sin registro' : value,
+            style: pw.TextStyle(
+              fontSize: 8.5,
+              fontWeight: isBold || isAccent ? pw.FontWeight.bold : pw.FontWeight.normal,
+              color: isAccent
+                  ? const PdfColor.fromInt(0xFF0284C7)
+                  : const PdfColor.fromInt(0xFF0F172A),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Mapa cuadrado satelital con marcador de posición (pin) centrado
+  static pw.Widget _buildSatelliteMapWidget({
+    required Uint8List? satelliteBytes,
+    required double? lat,
+    required double? lng,
+  }) {
+    const double mapSize = 210.0;
+    const markerColor = PdfColor.fromInt(0xFFEF4444); // Red 500
+
+    return pw.ClipRRect(
+      horizontalRadius: 8,
+      verticalRadius: 8,
+      child: pw.Container(
+        width: mapSize,
+        height: mapSize,
+        decoration: pw.BoxDecoration(
+          color: const PdfColor.fromInt(0xFF0F172A),
+          border: pw.Border.all(color: const PdfColor.fromInt(0xFF0284C7), width: 1.5),
+        ),
+        child: pw.Stack(
+          alignment: pw.Alignment.center,
+          children: [
+          // Imagen Satelital o Representación de Respaldo
+          if (satelliteBytes != null)
+            pw.Image(
+              pw.MemoryImage(satelliteBytes),
+              fit: pw.BoxFit.cover,
+              width: mapSize,
+              height: mapSize,
+            )
+          else
+            _buildVectorMapPlaceholder(lat, lng),
+
+          // Insignia Superior Izquierda: MODO SATELITAL
+          pw.Positioned(
+            top: 7,
+            left: 7,
+            child: pw.Container(
+              padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+              decoration: pw.BoxDecoration(
+                color: const PdfColor.fromInt(0xE60F172A),
+                borderRadius: pw.BorderRadius.circular(4),
+                border: pw.Border.all(color: const PdfColor.fromInt(0xFF38BDF8), width: 0.5),
+              ),
+              child: pw.Row(
+                mainAxisSize: pw.MainAxisSize.min,
+                children: [
+                  pw.Container(
+                    width: 5,
+                    height: 5,
+                    decoration: const pw.BoxDecoration(
+                      color: PdfColor.fromInt(0xFF10B981),
+                      shape: pw.BoxShape.circle,
+                    ),
+                  ),
+                  pw.SizedBox(width: 4),
+                  pw.Text(
+                    'MODO SATELITAL',
+                    style: pw.TextStyle(
+                      color: PdfColors.white,
+                      fontSize: 6.5,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Indicador de Norte Superior Derecho
+          pw.Positioned(
+            top: 7,
+            right: 7,
+            child: pw.Container(
+              padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              decoration: pw.BoxDecoration(
+                color: const PdfColor.fromInt(0xE60F172A),
+                borderRadius: pw.BorderRadius.circular(4),
+              ),
+              child: pw.Text(
+                'N ^',
+                style: pw.TextStyle(
+                  color: const PdfColor.fromInt(0xFF38BDF8),
+                  fontSize: 6.5,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+
+          // Marcador de Posición Centrado (PIN ROJO)
+          pw.Center(
+            child: pw.Column(
+              mainAxisSize: pw.MainAxisSize.min,
+              children: [
+                pw.Container(
+                  width: 18,
+                  height: 18,
+                  decoration: pw.BoxDecoration(
+                    color: markerColor,
+                    shape: pw.BoxShape.circle,
+                    border: pw.Border.all(color: PdfColors.white, width: 2),
+                  ),
+                  child: pw.Center(
+                    child: pw.Container(
+                      width: 5,
+                      height: 5,
+                      decoration: const pw.BoxDecoration(
+                        color: PdfColors.white,
+                        shape: pw.BoxShape.circle,
+                      ),
+                    ),
+                  ),
+                ),
+                pw.CustomPaint(
+                  size: const PdfPoint(7, 5),
+                  painter: (canvas, size) {
+                    canvas.moveTo(0, 0);
+                    canvas.lineTo(size.x, 0);
+                    canvas.lineTo(size.x / 2, size.y);
+                    canvas.closePath();
+                    canvas.setFillColor(markerColor);
+                    canvas.fillPath();
+                  },
+                ),
+                pw.SizedBox(height: 2),
+                pw.Container(
+                  padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  decoration: pw.BoxDecoration(
+                    color: const PdfColor.fromInt(0xE60F172A),
+                    borderRadius: pw.BorderRadius.circular(3),
+                  ),
+                  child: pw.Text(
+                    'PROYECTO',
+                    style: pw.TextStyle(
+                      color: PdfColors.white,
+                      fontSize: 5.5,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Barra Inferior de Coordenadas GPS
+          pw.Positioned(
+            bottom: 7,
+            left: 7,
+            right: 7,
+            child: pw.Container(
+              padding: const pw.EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: pw.BoxDecoration(
+                color: const PdfColor.fromInt(0xE60F172A),
+                borderRadius: pw.BorderRadius.circular(4),
+              ),
+              child: pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text(
+                    lat != null && lng != null
+                        ? 'GPS: ${lat.toStringAsFixed(6)}, ${lng.toStringAsFixed(6)}'
+                        : 'GPS: Registrado en sistema',
+                    style: pw.TextStyle(
+                      color: PdfColors.white,
+                      fontSize: 6.5,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                  pw.Text(
+                    'ARCGIS IMAGERY HD',
+                    style: const pw.TextStyle(
+                      color: PdfColor.fromInt(0xFF38BDF8),
+                      fontSize: 5.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+  /// Gráfico de respaldo para mapa satelital cuando no hay conexión
+  static pw.Widget _buildVectorMapPlaceholder(double? lat, double? lng) {
+    return pw.Container(
+      color: const PdfColor.fromInt(0xFF1E293B),
+      child: pw.Center(
+        child: pw.Column(
+          mainAxisAlignment: pw.MainAxisAlignment.center,
+          children: [
+            pw.Text(
+              '[ MODO SATELITAL ]',
+              style: pw.TextStyle(
+                color: const PdfColor.fromInt(0xFF38BDF8),
+                fontSize: 8.5,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+            pw.SizedBox(height: 4),
+            pw.Text(
+              lat != null && lng != null
+                  ? 'Lat: ${lat.toStringAsFixed(5)}, Lon: ${lng.toStringAsFixed(5)}'
+                  : 'Coordenadas del Proyecto Registradas',
+              style: const pw.TextStyle(color: PdfColors.white, fontSize: 7),
+            ),
+          ],
         ),
       ),
     );
