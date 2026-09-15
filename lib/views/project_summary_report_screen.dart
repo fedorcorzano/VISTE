@@ -6,6 +6,7 @@ import '../services/internal_report_pdf_service.dart';
 import '../services/project_manager_report_pdf_service.dart';
 import '../services/client_report_pdf_service.dart';
 import '../services/catalog_visual_service.dart';
+import 'catalog_manager_screen.dart';
 
 class ProjectSummaryReportScreen extends StatefulWidget {
   final ProjectSessionModel session;
@@ -199,6 +200,22 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
         ),
         actions: [
           IconButton(
+            tooltip: 'Catálogo Visual & Fotos',
+            icon: const Icon(Icons.photo_camera_back, color: Color(0xFF10B981)),
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (ctx) => const CatalogManagerScreen(),
+                ),
+              );
+              if (mounted) {
+                _generatePdfsInBackground();
+                setState(() {});
+              }
+            },
+          ),
+          IconButton(
             tooltip: 'Enviar Correo al Cliente',
             icon: const Icon(Icons.email_outlined, color: Color(0xFF38BDF8)),
             onPressed: _sendEmailToClient,
@@ -321,7 +338,69 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
             ],
           ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 16),
+
+        // Banner de Acceso al Catálogo Visual y Sincronización Drive (Métodos 1 y 2)
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E293B),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFF38BDF8).withValues(alpha: 0.3)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F172A),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.add_a_photo, color: Color(0xFF10B981), size: 22),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Base Visual de Herramientas & Materiales',
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Toma fotos reales en campo o sincroniza fotos desde Google Drive.',
+                      style: TextStyle(color: Colors.white60, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0284C7),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                icon: const Icon(Icons.manage_search, size: 15),
+                label: const Text('Catálogo', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                onPressed: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (ctx) => const CatalogManagerScreen(),
+                    ),
+                  );
+                  if (mounted) {
+                    _generatePdfsInBackground();
+                    setState(() {});
+                  }
+                },
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
 
         // 3. Herramientas con Fotos Reales y Frecuencia
         _buildSectionHeader(
@@ -433,28 +512,62 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Imagen real o ícono fallback
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: Container(
-                    width: 76,
-                    height: 76,
-                    color: const Color(0xFF0F172A),
-                    child: item.imageUrl.isNotEmpty
-                        ? Image.network(
-                            item.imageUrl,
-                            fit: BoxFit.cover,
-                            errorBuilder: (ctx, err, stack) => Icon(
-                              item.fallbackIcon,
-                              color: item.badgeColor,
-                              size: 36,
-                            ),
-                          )
-                        : Icon(
-                            item.fallbackIcon,
-                            color: item.badgeColor,
-                            size: 36,
+                // Imagen real o ícono fallback con indicador táctil
+                GestureDetector(
+                  onTap: () async {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (ctx) => CatalogManagerScreen(initialSearch: item.title),
+                      ),
+                    );
+                    if (mounted) {
+                      _generatePdfsInBackground();
+                      setState(() {});
+                    }
+                  },
+                  child: Stack(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: Container(
+                          width: 76,
+                          height: 76,
+                          color: const Color(0xFF0F172A),
+                          child: item.imageUrl.isNotEmpty
+                              ? Image.network(
+                                  item.imageUrl,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (ctx, err, stack) => Icon(
+                                    item.fallbackIcon,
+                                    color: item.badgeColor,
+                                    size: 36,
+                                  ),
+                                )
+                              : Icon(
+                                  item.fallbackIcon,
+                                  color: item.badgeColor,
+                                  size: 36,
+                                ),
+                        ),
+                      ),
+                      Positioned(
+                        bottom: 4,
+                        right: 4,
+                        child: Container(
+                          padding: const EdgeInsets.all(3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xE60F172A),
+                            borderRadius: BorderRadius.circular(4),
                           ),
+                          child: Icon(
+                            item.imageUrl.isNotEmpty ? Icons.camera_alt : Icons.add_a_photo,
+                            color: item.imageUrl.isNotEmpty ? const Color(0xFF38BDF8) : const Color(0xFF10B981),
+                            size: 13,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -515,6 +628,26 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
                       ),
                     ],
                   ),
+                ),
+                IconButton(
+                  tooltip: item.imageUrl.isNotEmpty ? 'Cambiar Foto' : 'Tomar Foto para Catálogo',
+                  icon: Icon(
+                    item.imageUrl.isNotEmpty ? Icons.edit_outlined : Icons.add_a_photo,
+                    color: item.imageUrl.isNotEmpty ? const Color(0xFF38BDF8) : const Color(0xFF10B981),
+                    size: 20,
+                  ),
+                  onPressed: () async {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (ctx) => CatalogManagerScreen(initialSearch: item.title),
+                      ),
+                    );
+                    if (mounted) {
+                      _generatePdfsInBackground();
+                      setState(() {});
+                    }
+                  },
                 ),
               ],
             ),

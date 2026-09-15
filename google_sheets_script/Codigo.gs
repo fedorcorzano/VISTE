@@ -1,4 +1,5 @@
 const DRIVE_FOLDER_NAME = "Vigilarte_Evidencias";
+const CATALOG_DRIVE_FOLDER_NAME = "VIGILARTE_CATALOGO_FOTOS";
 const SHEET_NAME = "Proyectos_Terreno";
 
 function doPost(e) {
@@ -15,6 +16,14 @@ function doPost(e) {
       payload = JSON.parse(e.postData.contents);
     } catch (parseErr) {
       return createJsonResponse({ status: "error", message: "Fallo al decodificar JSON: " + parseErr.toString() }, 400);
+    }
+
+    // Acciones especiales para el Catálogo Visual (Método 1 y Método 2)
+    if (payload.action === "upload_catalog_image") {
+      return handleUploadCatalogImage(payload);
+    }
+    if (payload.action === "sync_drive_catalog") {
+      return handleSyncDriveCatalog();
     }
 
     // Datos del proyecto y sesión
@@ -374,8 +383,261 @@ function getSheetColumnsMap(ss, sheetName) {
   return map;
 }
 
+// Normalización inteligente para coincidencia difusa (ignora tildes, mayúsculas y caracteres especiales)
+function normalizeForMatch(str) {
+  if (!str) return "";
+  return str.toString()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // Sin tildes
+    .replace(/[_\-\/\.\(\)]+/g, " ") // Guiones y barras a espacios
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Método 1: Guardar foto del catálogo capturada desde la app
+function handleUploadCatalogImage(payload) {
+  const itemName = (payload.itemName || payload.item || "").toString().trim();
+  if (!itemName) {
+    return createJsonResponse({ status: "error", message: "Nombre de ítem requerido." }, 400);
+  }
+  const category = (payload.category || payload.categoria || "Herramienta").toString().trim();
+  const commercialName = (payload.commercialName || payload.nombreComercial || itemName).toString().trim();
+  const specification = (payload.specification || payload.especificacion || "").toString().trim();
+  const base64Data = payload.base64Data || payload.fotoBase64;
+
+  if (!base64Data || base64Data.length < 20) {
+    return createJsonResponse({ status: "error", message: "Datos de imagen Base64 inválidos o vacíos." }, 400);
+  }
+
+  // 1. Guardar en carpeta de Drive VIGILARTE_CATALOGO_FOTOS
+  const cleanBase64 = base64Data.replace(/^data:image\/\w+;base64,/, "").trim();
+  const bytes = Utilities.base64Decode(cleanBase64);
+  const blob = Utilities.newBlob(bytes, "image/jpeg", itemName + ".jpg");
+
+  let folder;
+  const folders = DriveApp.getFoldersByName(CATALOG_DRIVE_FOLDER_NAME);
+  folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(CATALOG_DRIVE_FOLDER_NAME);
+
+  // Reemplazar archivo si ya existía con el mismo nombre
+  const existingFiles = folder.getFilesByName(itemName + ".jpg");
+  while (existingFiles.hasNext()) {
+    existingFiles.next().setTrashed(true);
+  }
+
+  const file = folder.createFile(blob);
+  try {
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  } catch (e) {
+    console.warn("No se pudo aplicar permiso público:", e);
+  }
+
+  const directUrl = "https://drive.google.com/uc?export=view&id=" + file.getId();
+
+  // 2. Actualizar o insertar en CATALOGO_VISUAL
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sVisual = ss.getSheetByName("CATALOGO_VISUAL");
+  if (!sVisual) {
+    initTechnicalTabs(ss);
+    sVisual = ss.getSheetByName("CATALOGO_VISUAL");
+  }
+
+  const data = sVisual.getDataRange().getValues();
+  let foundRow = -1;
+  const cleanTarget = normalizeForMatch(itemName);
+
+  for (let r = 1; r < data.length; r++) {
+    const rowItem = (data[r][0] || "").toString().trim();
+    if (normalizeForMatch(rowItem) === cleanTarget) {
+      foundRow = r + 1;
+      break;
+    }
+  }
+
+  if (foundRow !== -1) {
+    sVisual.getRange(foundRow, 5).setValue(directUrl);
+    if (commercialName && commercialName !== itemName) {
+      sVisual.getRange(foundRow, 3).setValue(commercialName);
+    }
+    if (specification) {
+      sVisual.getRange(foundRow, 4).setValue(specification);
+    }
+  } else {
+    sVisual.appendRow([
+      itemName,
+      category,
+      commercialName,
+      specification || "Registrado desde App VIGILARTE",
+      directUrl
+    ]);
+  }
+
+  return createJsonResponse({
+    status: "success",
+    message: "Foto registrada exitosamente en catálogo",
+    url: directUrl,
+    item: itemName
+  }, 200);
+}
+
+// Método 2: Sincronización masiva desde la carpeta de Google Drive
+function handleSyncDriveCatalog() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sVisual = ss.getSheetByName("CATALOGO_VISUAL");
+  if (!sVisual) {
+    initTechnicalTabs(ss);
+    sVisual = ss.getSheetByName("CATALOGO_VISUAL");
+  }
+
+  // Asegurar que el catálogo tenga precargadas todas las herramientas y accesorios
+  prepopulateCatalogMasterItems(ss);
+
+  let folder;
+  const folders = DriveApp.getFoldersByName(CATALOG_DRIVE_FOLDER_NAME);
+  if (!folders.hasNext()) {
+    folder = DriveApp.createFolder(CATALOG_DRIVE_FOLDER_NAME);
+    return createJsonResponse({
+      status: "success",
+      message: "Carpeta '" + CATALOG_DRIVE_FOLDER_NAME + "' creada en Google Drive. Coloca las fotos con el nombre de cada ítem y vuelve a sincronizar.",
+      updatedCount: 0,
+      addedCount: 0
+    }, 200);
+  }
+  folder = folders.next();
+
+  const files = folder.getFiles();
+  let updatedCount = 0;
+  let addedCount = 0;
+
+  // Mapa de filas actuales en CATALOGO_VISUAL
+  const data = sVisual.getDataRange().getValues();
+  const itemRowMap = new Map();
+  for (let r = 1; r < data.length; r++) {
+    const rowItem = (data[r][0] || "").toString().trim();
+    if (rowItem) {
+      itemRowMap.set(normalizeForMatch(rowItem), r + 1);
+    }
+  }
+
+  while (files.hasNext()) {
+    const file = files.next();
+    const rawName = file.getName();
+    // Quitar extensión: .jpg, .png, .jpeg, .webp
+    const baseName = rawName.replace(/\.[a-zA-Z0-9]+$/, "").trim();
+    if (!baseName) continue;
+
+    try {
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    } catch (_) {}
+
+    const directUrl = "https://drive.google.com/uc?export=view&id=" + file.getId();
+    const normFile = normalizeForMatch(baseName);
+
+    // 1. Coincidencia exacta
+    let matchedRow = itemRowMap.get(normFile);
+
+    // 2. Coincidencia difusa (si el nombre del archivo está contenido o contiene el ítem)
+    if (!matchedRow) {
+      for (const [keyNorm, rowNum] of itemRowMap.entries()) {
+        if (normFile.includes(keyNorm) || keyNorm.includes(normFile)) {
+          matchedRow = rowNum;
+          break;
+        }
+      }
+    }
+
+    if (matchedRow) {
+      sVisual.getRange(matchedRow, 5).setValue(directUrl);
+      updatedCount++;
+    } else {
+      // 3. Auto-registro para herramientas/materiales futuros que aún no estaban en la lista
+      sVisual.appendRow([
+        baseName,
+        "General",
+        baseName,
+        "Sincronizado desde carpeta Drive",
+        directUrl
+      ]);
+      itemRowMap.set(normFile, sVisual.getLastRow());
+      addedCount++;
+    }
+  }
+
+  return createJsonResponse({
+    status: "success",
+    message: "Sincronización completada: " + updatedCount + " fotos vinculadas, " + addedCount + " nuevos ítems agregados.",
+    updatedCount: updatedCount,
+    addedCount: addedCount
+  }, 200);
+}
+
+// Pre-llenar el catálogo con todos los nombres de herramientas y accesorios maestros
+function prepopulateCatalogMasterItems(ss) {
+  if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sVisual = ss.getSheetByName("CATALOGO_VISUAL");
+  if (!sVisual) {
+    initTechnicalTabs(ss);
+    sVisual = ss.getSheetByName("CATALOGO_VISUAL");
+  }
+
+  const currentItems = new Set(
+    sVisual.getDataRange().getValues().slice(1).map(r => normalizeForMatch(r[0]))
+  );
+
+  let added = 0;
+
+  function collectFromSheet(sheetName, category) {
+    const s = ss.getSheetByName(sheetName);
+    if (!s) return;
+    const data = s.getDataRange().getValues();
+    for (let col = 0; col < data[0].length; col++) {
+      for (let row = 1; row < data.length; row++) {
+        const val = (data[row][col] || "").toString().trim();
+        if (val && !currentItems.has(normalizeForMatch(val))) {
+          sVisual.appendRow([val, category, val, "Catálogo técnico maestro de obra", ""]);
+          currentItems.add(normalizeForMatch(val));
+          added++;
+        }
+      }
+    }
+  }
+
+  collectFromSheet("HERRAMIENTAS_MATERIAL", "Herramienta");
+  collectFromSheet("HERRAMIENTAS_ESTRUCTURA", "Herramienta");
+  collectFromSheet("ACCESORIOS_MATERIAL", "Accesorio");
+
+  return added;
+}
+
+// Menú interactivo en Google Sheets
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu("VIGILARTE")
+    .addItem("🔄 Sincronizar Fotos desde Carpeta Drive", "menuSyncDriveCatalog")
+    .addItem("📋 Pre-llenar Catálogo con Herramientas y Accesorios", "menuPrepopulateCatalog")
+    .addItem("⚙️ Inicializar Pestañas Técnicas", "initTechnicalTabs")
+    .addToUi();
+}
+
+function menuSyncDriveCatalog() {
+  const res = handleSyncDriveCatalog();
+  const obj = JSON.parse(res.getContent());
+  SpreadsheetApp.getUi().alert("VIGILARTE - Sincronización", obj.message, SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+function menuPrepopulateCatalog() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const count = prepopulateCatalogMasterItems(ss);
+  SpreadsheetApp.getUi().alert("VIGILARTE - Catálogo", "Se precargaron " + count + " ítems en CATALOGO_VISUAL.", SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
 function doGet(e) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // Disparar sincronización desde GET si se solicita
+  if (e && e.parameter && e.parameter.action === "sync_drive_catalog") {
+    return handleSyncDriveCatalog();
+  }
   
   // Asegurar que las pestañas técnicas existan
   try {

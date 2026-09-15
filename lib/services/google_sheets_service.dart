@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/constants.dart';
@@ -144,5 +145,102 @@ class GoogleSheetsService {
         'Piso Resbaladizo',
       ],
     };
+  }
+
+  // 3. Subir foto de herramienta/material al catálogo en Google Drive y Sheets (Método 1)
+  Future<SheetsResponse> uploadCatalogImage({
+    required String itemName,
+    required String category,
+    required Uint8List imageBytes,
+    String? commercialName,
+    String? specification,
+  }) async {
+    try {
+      final base64Data = base64Encode(imageBytes);
+      final payload = {
+        'action': 'upload_catalog_image',
+        'itemName': itemName,
+        'category': category,
+        'commercialName': commercialName ?? itemName,
+        'specification': specification ?? '',
+        'base64Data': base64Data,
+      };
+
+      final response = await http.post(
+        Uri.parse(_webAppUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(payload),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 302) {
+        final data = jsonDecode(response.body);
+        if (data is Map && data['status'] == 'error') {
+          return SheetsResponse(
+            isSuccess: false,
+            message: data['message'] ?? 'Error reportado por el servidor',
+          );
+        }
+
+        final url = (data is Map && data['url'] != null) ? data['url'].toString() : '';
+        if (url.isNotEmpty) {
+          final isMat = category.toLowerCase().contains('mat');
+          CatalogVisualService.setSingleItem(
+            VisualCatalogItem(
+              title: itemName,
+              category: category,
+              commercialName: commercialName ?? itemName,
+              specification: (specification != null && specification.isNotEmpty)
+                  ? specification
+                  : 'Especificación estándar según catálogo de obra.',
+              imageUrl: url,
+              fallbackIcon: isMat ? Icons.inventory_2 : Icons.handyman,
+              badgeColor: isMat ? const Color(0xFF4ADE80) : const Color(0xFF38BDF8),
+            ),
+          );
+        }
+
+        return SheetsResponse(
+          isSuccess: true,
+          message: '¡Foto registrada con éxito en Drive y actualizada en Excel!',
+        );
+      } else {
+        return SheetsResponse(
+          isSuccess: false,
+          message: 'Error en el servidor: ${response.statusCode}',
+        );
+      }
+    } catch (e) {
+      return SheetsResponse(isSuccess: false, message: 'Error al subir foto: $e');
+    }
+  }
+
+  // 4. Sincronizar masivamente las fotos desde la carpeta de Google Drive (Método 2)
+  Future<SheetsResponse> syncDriveCatalog() async {
+    try {
+      final response = await http.post(
+        Uri.parse(_webAppUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'action': 'sync_drive_catalog'}),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 302) {
+        final data = jsonDecode(response.body);
+        final msg = (data is Map && data['message'] != null)
+            ? data['message'].toString()
+            : 'Sincronización de Drive completada.';
+
+        // Re-cargar catálogos para actualizar catálogo visual en memoria
+        await fetchCatalogs();
+
+        return SheetsResponse(isSuccess: true, message: msg);
+      } else {
+        return SheetsResponse(
+          isSuccess: false,
+          message: 'Error en el servidor al sincronizar: ${response.statusCode}',
+        );
+      }
+    } catch (e) {
+      return SheetsResponse(isSuccess: false, message: 'Error de red: $e');
+    }
   }
 }

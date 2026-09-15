@@ -237,6 +237,23 @@ class CatalogVisualService {
     }
   }
 
+  /// Actualiza o agrega un ítem individual en memoria inmediatamente
+  static void setSingleItem(VisualCatalogItem item) {
+    final key = _normalize(item.title);
+    _catalog[key] = item;
+  }
+
+  /// Retorna todos los ítems registrados en el catálogo para visualización y gestión
+  static List<VisualCatalogItem> getAllRegisteredItems() {
+    return _catalog.values.toList();
+  }
+
+  /// Verifica si un ítem ya cuenta con imagen comercial real
+  static bool hasRealImage(String name) {
+    final item = getItemInfo(name);
+    return item.imageUrl.isNotEmpty && item.imageUrl.startsWith('http');
+  }
+
   /// Devuelve la tarjeta visual detallada o un objeto genérico estilizado
   static VisualCatalogItem getItemInfo(String name, {bool isMaterial = false}) {
     final clean = _normalize(name);

@@ -1,10 +1,12 @@
 import 'dart:typed_data';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vistec/models/project_model.dart';
 import 'package:vistec/models/session_evidence_model.dart';
 import 'package:vistec/services/internal_report_pdf_service.dart';
 import 'package:vistec/services/client_report_pdf_service.dart';
 import 'package:vistec/services/project_manager_report_pdf_service.dart';
+import 'package:vistec/services/catalog_visual_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -222,6 +224,30 @@ void main() {
       final pdfBytes = await ProjectManagerReportPdfService.generatePdf(session);
       expect(pdfBytes, isNotNull);
       expect(pdfBytes.length, greaterThan(1000));
+    });
+  });
+
+  group('CatalogVisualService Tests', () {
+    test('setSingleItem updates memory and getItemInfo retrieves it', () {
+      final item = VisualCatalogItem(
+        title: 'Herramienta de Prueba 2026',
+        category: 'Herramienta',
+        commercialName: 'Prueba Pro Max',
+        specification: 'Prueba unitaria de catálogo',
+        imageUrl: 'https://example.com/foto_prueba.jpg',
+        fallbackIcon: Icons.handyman,
+      );
+
+      CatalogVisualService.setSingleItem(item);
+
+      final retrieved = CatalogVisualService.getItemInfo('Herramienta de Prueba 2026');
+      expect(retrieved.commercialName, 'Prueba Pro Max');
+      expect(retrieved.imageUrl, 'https://example.com/foto_prueba.jpg');
+      expect(CatalogVisualService.hasRealImage('Herramienta de Prueba 2026'), isTrue);
+      expect(CatalogVisualService.hasRealImage('Item Inexistente Totalmente 12345'), isFalse);
+
+      final allItems = CatalogVisualService.getAllRegisteredItems();
+      expect(allItems.any((i) => i.title == 'Herramienta de Prueba 2026'), isTrue);
     });
   });
 }
