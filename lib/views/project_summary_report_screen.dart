@@ -873,6 +873,15 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
     );
   }
 
+  String get _projectIdentifier {
+    final proj = widget.session.project.proyecto.trim();
+    final cont = widget.session.project.contacto.trim();
+    if (cont.isNotEmpty && cont != 'N/A' && cont != 'General') {
+      return '$proj ($cont)';
+    }
+    return proj.isNotEmpty ? proj : 'Proyecto General';
+  }
+
   void _shareSupplierQuoteLink() {
     final sheetsService = GoogleSheetsService();
     final materials = widget.session.getMaterialsWithFrequency();
@@ -883,7 +892,7 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
     ];
 
     final quoteUrl = sheetsService.getSupplierQuoteUrl(
-      widget.session.project.proyecto,
+      _projectIdentifier,
       items: allItems,
     );
 
@@ -960,7 +969,7 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
     );
 
     final sheetsService = GoogleSheetsService();
-    final data = await sheetsService.fetchSupplierQuotes(widget.session.project.proyecto);
+    final data = await sheetsService.fetchSupplierQuotes(_projectIdentifier);
 
     if (!mounted) return;
     Navigator.pop(context); // cerrar spinner
