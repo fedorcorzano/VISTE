@@ -315,14 +315,93 @@ class ClientReportPdfService {
           ),
           pw.SizedBox(height: 16),
 
-          // SECCIÓN 1: CONDICIONES DE SEGURIDAD SST IDENTIFICADAS EN CAMPO
+          // SECCIÓN 1: PROPUESTA DE EQUIPAMIENTO Y SISTEMAS COTIZADOS
           pw.Container(
             padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 8),
             color: primaryColor,
             child: pw.Row(
               children: [
                 pw.Text(
-                  '1. CONDICIONES DE SEGURIDAD Y PREVENCION DE RIESGOS (SST)',
+                  '1. PROPUESTA DE EQUIPAMIENTO Y SISTEMAS COTIZADOS',
+                  style: pw.TextStyle(
+                    color: PdfColors.white,
+                    fontSize: 9.5,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          pw.SizedBox(height: 8),
+
+          pw.Text(
+            'Detalle de la solucion tecnica de equipamiento propuesta para cada sector relevado en el proyecto:',
+            style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+          ),
+          pw.SizedBox(height: 6),
+
+          pw.Table(
+            border: pw.TableBorder.all(color: borderGray, width: 0.5),
+            columnWidths: const {
+              0: pw.FlexColumnWidth(2.0),
+              1: pw.FlexColumnWidth(3.5),
+              2: pw.FlexColumnWidth(2.5),
+            },
+            children: [
+              pw.TableRow(
+                decoration: const pw.BoxDecoration(color: lightBg),
+                children: [
+                  _buildHeaderCell('Sector / Area'),
+                  _buildHeaderCell('Sistema / Equipamiento Propuesto'),
+                  _buildHeaderCell('Estado Tecnico'),
+                ],
+              ),
+              ...session.photos.map((p) {
+                return pw.TableRow(
+                  children: [
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.all(6),
+                      child: pw.Text(
+                        p.areaSector,
+                        style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: primaryColor),
+                      ),
+                    ),
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.all(6),
+                      child: pw.Text(
+                        'Punto de instalacion preparado y apto para montaje de equipos cotizados.',
+                        style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey800),
+                      ),
+                    ),
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.all(6),
+                      child: pw.Container(
+                        padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                        decoration: pw.BoxDecoration(
+                          color: const PdfColor.fromInt(0xFFDCFCE7),
+                          borderRadius: pw.BorderRadius.circular(3),
+                        ),
+                        child: pw.Text(
+                          'Apto para Instalacion',
+                          style: const pw.TextStyle(fontSize: 7.5, color: PdfColor.fromInt(0xFF15803D)),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              }),
+            ],
+          ),
+          pw.SizedBox(height: 18),
+
+          // SECCIÓN 2: CONDICIONES DE SEGURIDAD Y PREVENCION DE RIESGOS (SST)
+          pw.Container(
+            padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+            color: primaryColor,
+            child: pw.Row(
+              children: [
+                pw.Text(
+                  '2. CONDICIONES DE SEGURIDAD Y PREVENCION DE RIESGOS (SST)',
                   style: pw.TextStyle(
                     color: PdfColors.white,
                     fontSize: 9.5,
@@ -416,85 +495,6 @@ class ClientReportPdfService {
               ],
             ),
           ],
-          pw.SizedBox(height: 18),
-
-          // SECCIÓN 2: PROPUESTA DE EQUIPOS Y SISTEMAS COTIZADOS
-          pw.Container(
-            padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 8),
-            color: primaryColor,
-            child: pw.Row(
-              children: [
-                pw.Text(
-                  '2. PROPUESTA DE EQUIPAMIENTO Y SISTEMAS COTIZADOS',
-                  style: pw.TextStyle(
-                    color: PdfColors.white,
-                    fontSize: 9.5,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          pw.SizedBox(height: 8),
-
-          pw.Text(
-            'Detalle de la solucion tecnica de equipamiento propuesta para cada sector relevado en el proyecto:',
-            style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
-          ),
-          pw.SizedBox(height: 6),
-
-          pw.Table(
-            border: pw.TableBorder.all(color: borderGray, width: 0.5),
-            columnWidths: const {
-              0: pw.FlexColumnWidth(2.0),
-              1: pw.FlexColumnWidth(3.5),
-              2: pw.FlexColumnWidth(2.5),
-            },
-            children: [
-              pw.TableRow(
-                decoration: const pw.BoxDecoration(color: lightBg),
-                children: [
-                  _buildHeaderCell('Sector / Area'),
-                  _buildHeaderCell('Sistema / Equipamiento Propuesto'),
-                  _buildHeaderCell('Estado Tecnico'),
-                ],
-              ),
-              ...session.photos.map((p) {
-                return pw.TableRow(
-                  children: [
-                    pw.Padding(
-                      padding: const pw.EdgeInsets.all(6),
-                      child: pw.Text(
-                        p.areaSector,
-                        style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: primaryColor),
-                      ),
-                    ),
-                    pw.Padding(
-                      padding: const pw.EdgeInsets.all(6),
-                      child: pw.Text(
-                        'Punto de instalacion preparado y apto para montaje de equipos cotizados.',
-                        style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey800),
-                      ),
-                    ),
-                    pw.Padding(
-                      padding: const pw.EdgeInsets.all(6),
-                      child: pw.Container(
-                        padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                        decoration: pw.BoxDecoration(
-                          color: const PdfColor.fromInt(0xFFDCFCE7),
-                          borderRadius: pw.BorderRadius.circular(3),
-                        ),
-                        child: pw.Text(
-                          'Apto para Instalacion',
-                          style: const pw.TextStyle(fontSize: 7.5, color: PdfColor.fromInt(0xFF15803D)),
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              }),
-            ],
-          ),
           pw.SizedBox(height: 24),
 
           // FIRMAS
@@ -521,7 +521,7 @@ class ClientReportPdfService {
       ),
     );
 
-    // 2. PÁGINAS DE FOTOGRAFÍAS EXCLUSIVAS PARA CLIENTE (SOLO MARCADORES DE CONDICIONES DE SEGURIDAD SST)
+    // 3. PÁGINAS DE FOTOGRAFÍAS EXCLUSIVAS PARA CLIENTE CON JERARQUÍA DE CONTROL DE RIESGOS
     for (int i = 0; i < session.photos.length; i++) {
       final photo = session.photos[i];
       // USAR EXCLUSIVAMENTE clientImageBytes (con solo marcadores SST, sin herramientas ni materiales)
@@ -530,78 +530,86 @@ class ClientReportPdfService {
       pdf.addPage(
         pw.Page(
           pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.all(28),
+          margin: const pw.EdgeInsets.symmetric(horizontal: 26, vertical: 20),
           build: (pw.Context context) {
             return pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
+                // Encabezado de Sección 3
                 pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
                     pw.Text(
-                      'EVIDENCIA DE SEGURIDAD SST #${photo.photoNumber} - ${photo.areaSector.toUpperCase()}',
+                      '3. JERARQUÍA DE CONTROL DE RIESGOS Y EVIDENCIA #${photo.photoNumber}',
                       style: pw.TextStyle(
                         color: primaryColor,
-                        fontSize: 10.5,
+                        fontSize: 10,
                         fontWeight: pw.FontWeight.bold,
                       ),
                     ),
                     pw.Text(
-                      'VIGILARTE - Proyecto: ${session.project.proyecto}',
-                      style: const pw.TextStyle(color: PdfColors.grey600, fontSize: 8),
+                      'SECTOR: ${photo.areaSector.toUpperCase()}',
+                      style: pw.TextStyle(
+                        color: accentColor,
+                        fontSize: 8.5,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
                     ),
                   ],
                 ),
-                pw.SizedBox(height: 5),
+                pw.SizedBox(height: 4),
                 pw.Container(height: 1.5, color: const PdfColor.fromInt(0xFF10B981)),
                 pw.SizedBox(height: 8),
 
-                // Imagen Fotográfica con SÓLO marcadores de Seguridad
-                pw.Expanded(
-                  child: pw.Center(
-                    child: pw.Container(
-                      decoration: pw.BoxDecoration(
-                        border: pw.Border.all(color: borderGray, width: 1),
-                        borderRadius: pw.BorderRadius.circular(6),
-                      ),
-                      child: pw.Image(
-                        imageProvider,
-                        fit: pw.BoxFit.contain,
-                      ),
+                // Imagen Fotográfica centrada horizontalmente, manteniendo gran detalle
+                pw.Center(
+                  child: pw.Container(
+                    height: 250,
+                    decoration: pw.BoxDecoration(
+                      border: pw.Border.all(color: borderGray, width: 1),
+                      borderRadius: pw.BorderRadius.circular(6),
+                    ),
+                    child: pw.Image(
+                      imageProvider,
+                      fit: pw.BoxFit.contain,
                     ),
                   ),
                 ),
                 pw.SizedBox(height: 8),
 
-                // Ficha Técnica de Seguridad SST
+                // Título de la Tabla de Jerarquía
+                pw.Text(
+                  'Matriz de Jerarquía de Control de Riesgos Operacionales (ISO 45001 / Ley 29783):',
+                  style: pw.TextStyle(
+                    fontSize: 8,
+                    fontWeight: pw.FontWeight.bold,
+                    color: primaryColor,
+                  ),
+                ),
+                pw.SizedBox(height: 4),
+
+                // Tabla con los campos solicitados: Jerarquía | Medida de Control Preventivo | Responsable
+                _buildHierarchyControlsTable(photo.peligros, primaryColor, borderGray, lightBg),
+                pw.SizedBox(height: 6),
+
+                // Fila informativa inferior
                 pw.Container(
-                  padding: const pw.EdgeInsets.all(8),
+                  padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: pw.BoxDecoration(
                     color: lightBg,
-                    borderRadius: pw.BorderRadius.circular(6),
-                    border: pw.Border.all(color: borderGray),
+                    borderRadius: pw.BorderRadius.circular(4),
+                    border: pw.Border.all(color: borderGray, width: 0.5),
                   ),
                   child: pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                     children: [
-                      pw.Expanded(
-                        child: pw.Column(
-                          crossAxisAlignment: pw.CrossAxisAlignment.start,
-                          children: [
-                            _buildInfoRow('Sector Inspeccionado:', photo.areaSector),
-                            pw.SizedBox(height: 2),
-                            _buildInfoRow('Condiciones SST Detectadas:', photo.peligros.isEmpty ? 'Area segura / Sin riesgos criticos' : photo.peligros.join(', ')),
-                          ],
-                        ),
+                      pw.Text(
+                        'Peligros identificados: ${photo.peligros.isEmpty ? "Área conforme / Sin riesgos críticos" : photo.peligros.join(", ")}',
+                        style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey800),
                       ),
-                      pw.Expanded(
-                        child: pw.Column(
-                          crossAxisAlignment: pw.CrossAxisAlignment.start,
-                          children: [
-                            _buildInfoRow('Estado de Seguridad:', photo.peligros.isEmpty ? 'Conforme para trabajos' : 'Requiere aplicacion de controles'),
-                            pw.SizedBox(height: 2),
-                            _buildInfoRow('Inspeccionado por:', 'VIGILARTE - Fedor Corzano'),
-                          ],
-                        ),
+                      pw.Text(
+                        'VIGILARTE SST - Elaborado por Fedor Corzano',
+                        style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold, color: primaryColor),
                       ),
                     ],
                   ),
@@ -637,6 +645,125 @@ class ClientReportPdfService {
       return 'Cumplir con EPP basico reglamentario (casco, lentes, calzado dielectrico con punta reforzada).';
     }
     return recs.join(' ');
+  }
+
+  /// Construye la tabla de 5 niveles de Jerarquía de Control de Riesgos (ISO 45001 / Ley 29783)
+  static pw.Widget _buildHierarchyControlsTable(
+    List<String> hazards,
+    PdfColor primaryColor,
+    PdfColor borderGray,
+    PdfColor lightBg,
+  ) {
+    final text = hazards.join(' ').toLowerCase();
+
+    // 1. Eliminación
+    String elim = 'Eliminar elementos cortantes, desorden y cables en desuso en el area inmediata de trabajo.';
+    String elimResp = 'Cliente / Mantenimiento';
+    if (text.contains('electr') || text.contains('tension') || text.contains('cable')) {
+      elim = 'Desenergizar y aplicar bloqueo / etiquetado (LOTO) en tableros o circuitos cercanos antes de intervenir.';
+      elimResp = 'Cliente / Mantenimiento';
+    } else if (text.contains('altura') || text.contains('caida')) {
+      elim = 'Planificar pre-armado y ensambles a nivel de piso para minimizar el tiempo de exposicion en altura.';
+      elimResp = 'Supervisor SST / VIGILARTE';
+    }
+
+    // 2. Sustitución
+    String sust = 'Sustituir herramientas manuales convencionales por herramientas con aislamiento certificado.';
+    String sustResp = 'VIGILARTE / Contratista';
+    if (text.contains('altura') || text.contains('caida')) {
+      sust = 'Sustituir escaleras portatiles de mano por andamios modulares normados o plataforma elevadora tipo tijera.';
+      sustResp = 'VIGILARTE / Contratista';
+    }
+
+    // 3. Ingeniería
+    String ing = 'Instalacion de delimitacion fisica rigida y protecciones en puntos de paso o trabajo.';
+    String ingResp = 'Cliente / VIGILARTE';
+    if (text.contains('altura') || text.contains('caida')) {
+      ing = 'Instalar puntos de anclaje certificados (5,000 lbf), lineas de vida y barandas perimetrales de proteccion.';
+      ingResp = 'Cliente / VIGILARTE';
+    } else if (text.contains('electr')) {
+      ing = 'Colocacion de mantas dielectricas y aislamiento fisico en canalizaciones o tableros adyacentes.';
+      ingResp = 'Cliente / VIGILARTE';
+    }
+
+    // 4. Administración
+    String adm = 'Difusion de IPERC Continuo, AST diario, charla de seguridad de 5 minutos y senalizacion perimetral.';
+    String admResp = 'Supervisor SST VIGILARTE';
+    if (text.contains('altura')) {
+      adm = 'Emision obligatoria de PETAR para Trabajos en Altura, check-list de arnes e inspeccion previa del area.';
+      admResp = 'Supervisor SST VIGILARTE';
+    }
+
+    // 5. EPP
+    String epp = 'Casco de seguridad con barbiquejo, lentes con proteccion lateral, guantes anticorte y calzado dielectrico.';
+    String eppResp = 'Personal Tecnico Instalador';
+    if (text.contains('altura')) {
+      epp = 'Arnes de cuerpo entero normado ANSI Z359 con doble linea de vida y absorbedor de impacto, casco dielectrico.';
+      eppResp = 'Personal Tecnico Instalador';
+    } else if (text.contains('electr')) {
+      epp = 'Guantes dielectricos normados clase 00/0, careta facial contra arco electrico y calzado de seguridad dielectrico.';
+      eppResp = 'Personal Tecnico Instalador';
+    }
+
+    final rows = [
+      ('Eliminacion', elim, elimResp, const PdfColor.fromInt(0xFFDC2626)),
+      ('Sustitucion', sust, sustResp, const PdfColor.fromInt(0xFFEA580C)),
+      ('Ingenieria', ing, ingResp, const PdfColor.fromInt(0xFFD97706)),
+      ('Administracion', adm, admResp, const PdfColor.fromInt(0xFF0284C7)),
+      ('EPP', epp, eppResp, const PdfColor.fromInt(0xFF16A34A)),
+    ];
+
+    return pw.Table(
+      border: pw.TableBorder.all(color: borderGray, width: 0.5),
+      columnWidths: const {
+        0: pw.FlexColumnWidth(1.8), // Jerarquía
+        1: pw.FlexColumnWidth(5.4), // Medida de Control
+        2: pw.FlexColumnWidth(2.8), // Responsable
+      },
+      children: [
+        pw.TableRow(
+          decoration: pw.BoxDecoration(color: lightBg),
+          children: [
+            pw.Padding(
+              padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+              child: pw.Text('Jerarquia', style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold, color: primaryColor)),
+            ),
+            pw.Padding(
+              padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+              child: pw.Text('Medida de Control Preventivo', style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold, color: primaryColor)),
+            ),
+            pw.Padding(
+              padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+              child: pw.Text('Responsable', style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold, color: primaryColor)),
+            ),
+          ],
+        ),
+        ...rows.map((r) {
+          return pw.TableRow(
+            children: [
+              pw.Padding(
+                padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+                child: pw.Row(
+                  children: [
+                    pw.Container(width: 5, height: 5, decoration: pw.BoxDecoration(shape: pw.BoxShape.circle, color: r.$4)),
+                    pw.SizedBox(width: 4),
+                    pw.Text(r.$1, style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold, color: primaryColor)),
+                  ],
+                ),
+              ),
+              pw.Padding(
+                padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+                child: pw.Text(r.$2, style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey800)),
+              ),
+              pw.Padding(
+                padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+                child: pw.Text(r.$3, style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold, color: const PdfColor.fromInt(0xFF0369A1))),
+              ),
+            ],
+          );
+        }),
+      ],
+    );
   }
 
   static pw.Widget _buildInfoRow(String label, String value) {

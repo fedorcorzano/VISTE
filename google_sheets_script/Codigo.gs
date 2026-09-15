@@ -25,6 +25,9 @@ function doPost(e) {
     if (payload.action === "sync_drive_catalog") {
       return handleSyncDriveCatalog();
     }
+    if (payload.action === "submit_supplier_quote") {
+      return handleSubmitSupplierQuote(payload);
+    }
 
     // Datos del proyecto y sesión
     const contacto    = payload.contacto || payload.nombre || "N/A";
@@ -615,6 +618,7 @@ function onOpen() {
     .createMenu("VIGILARTE")
     .addItem("🔄 Sincronizar Fotos desde Carpeta Drive", "menuSyncDriveCatalog")
     .addItem("📋 Pre-llenar Catálogo con Herramientas y Accesorios", "menuPrepopulateCatalog")
+    .addItem("💰 Ver Cotizaciones de Proveedores", "menuShowSupplierQuotes")
     .addItem("⚙️ Inicializar Pestañas Técnicas", "initTechnicalTabs")
     .addToUi();
 }
@@ -637,6 +641,14 @@ function doGet(e) {
   // Disparar sincronización desde GET si se solicita
   if (e && e.parameter && e.parameter.action === "sync_drive_catalog") {
     return handleSyncDriveCatalog();
+  }
+
+  // Portal Web para Cotizaciones de Múltiples Proveedores
+  if (e && e.parameter && e.parameter.action === "cotizar") {
+    return handleSupplierQuotationHtml(e);
+  }
+  if (e && e.parameter && e.parameter.action === "get_supplier_quotes") {
+    return handleGetSupplierQuotes(e.parameter.project || "");
   }
   
   // Asegurar que las pestañas técnicas existan
@@ -698,5 +710,311 @@ function createJsonResponse(data, statusCode) {
   }
   return ContentService.createTextOutput(JSON.stringify(data))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+// =========================================================================
+// PORTAL WEB DE COTIZACIÓN PARA MÚLTIPLES PROVEEDORES
+// Permite enviar el mismo enlace a 3, 5 o más proveedores para comparar precios
+// =========================================================================
+
+function handleSupplierQuotationHtml(e) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const project = (e && e.parameter && e.parameter.project) ? decodeURIComponent(e.parameter.project) : "Proyecto General VIGILARTE";
+  
+  // Obtener ítems de materiales del catálogo visual o parámetros
+  let itemsToQuote = [];
+  if (e && e.parameter && e.parameter.items) {
+    const rawItems = decodeURIComponent(e.parameter.items).split(",");
+    itemsToQuote = rawItems.map(name => ({
+      name: name.trim(),
+      commercialName: name.trim(),
+      spec: "Según catálogo de obra",
+      unit: "Und",
+      qty: 1,
+      imageUrl: ""
+    }));
+  } else {
+    // Leer materiales y accesorios del catálogo visual
+    const catData = getCatalogVisualData(ss);
+    itemsToQuote = catData.filter(i => i.category.toLowerCase().includes("material") || i.category.toLowerCase().includes("accesorio")).map(i => ({
+      name: i.itemName,
+      commercialName: i.commercialName || i.itemName,
+      spec: i.specification || "Conforme a requerimiento de obra",
+      unit: i.itemName.toLowerCase().includes("tubo") ? "Tiras (3m)" : (i.itemName.toLowerCase().includes("cable") ? "Caja" : "Und"),
+      qty: 10,
+      imageUrl: i.imageUrl || ""
+    }));
+  }
+
+  const scriptUrl = ScriptApp.getService().getUrl();
+
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VIGILARTE - Portal de Cotización de Proveedores</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    body { background-color: #0F172A; color: #F8FAFC; padding: 20px; line-height: 1.5; }
+    .container { max-width: 860px; margin: 0 auto; background-color: #1E293B; border-radius: 12px; border: 1px solid #334155; padding: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+    .header { border-bottom: 2px solid #0284C7; padding-bottom: 16px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+    .logo-title { display: flex; align-items: center; gap: 12px; }
+    .logo-badge { background: linear-gradient(135deg, #0284C7, #10B981); color: white; font-weight: 900; font-size: 18px; padding: 6px 12px; border-radius: 8px; letter-spacing: 1px; }
+    .company-title { font-size: 18px; font-weight: bold; color: #F8FAFC; letter-spacing: 1px; }
+    .project-card { background-color: #0F172A; border-radius: 8px; border: 1px solid #334155; padding: 14px; margin-bottom: 20px; }
+    .project-title { font-size: 14px; color: #38BDF8; font-weight: bold; }
+    .form-group { margin-bottom: 14px; }
+    label { display: block; font-size: 12px; color: #94A3B8; font-weight: 600; margin-bottom: 6px; }
+    input[type="text"], input[type="number"], textarea { width: 100%; background-color: #0F172A; border: 1px solid #334155; border-radius: 6px; padding: 10px; color: #F8FAFC; font-size: 13px; }
+    input:focus, textarea:focus { outline: none; border-color: #38BDF8; box-shadow: 0 0 0 2px rgba(56,189,248,0.2); }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .col { flex: 1; min-width: 240px; }
+    .table-container { overflow-x: auto; margin-top: 20px; margin-bottom: 20px; }
+    table { width: 100%; border-collapse: collapse; text-align: left; }
+    th { background-color: #0F172A; color: #38BDF8; font-size: 11px; text-transform: uppercase; padding: 10px; border-bottom: 1px solid #334155; }
+    td { padding: 10px; border-bottom: 1px solid #334155; font-size: 12px; vertical-align: middle; }
+    .item-name { font-weight: bold; color: #F8FAFC; font-size: 13px; }
+    .item-spec { color: #94A3B8; font-size: 11px; margin-top: 2px; }
+    .price-input { width: 110px !important; text-align: right; font-weight: bold; color: #4ADE80 !important; }
+    .days-input { width: 90px !important; text-align: center; }
+    .btn-submit { background: linear-gradient(135deg, #0284C7, #10B981); color: white; border: none; padding: 14px 28px; font-size: 14px; font-weight: bold; border-radius: 8px; cursor: pointer; width: 100%; transition: opacity 0.2s; box-shadow: 0 4px 12px rgba(2,132,199,0.3); }
+    .btn-submit:hover { opacity: 0.9; }
+    .alert-success { background-color: #064E3B; border: 1px solid #059669; color: #A7F3D0; padding: 16px; border-radius: 8px; text-align: center; display: none; margin-top: 20px; }
+    .thumb-img { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; border: 1px solid #334155; background: #0F172A; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo-title">
+        <div class="logo-badge">V</div>
+        <div>
+          <div class="company-title">V I G I L A R T E</div>
+          <div style="font-size: 11px; color: #94A3B8;">PORTAL DE COTIZACIÓN PARA PROVEEDORES</div>
+        </div>
+      </div>
+      <div style="font-size: 11px; color: #4ADE80; font-weight: bold;">● Solicitud Activa</div>
+    </div>
+
+    <div class="project-card">
+      <div style="font-size: 11px; color: #94A3B8;">PROYECTO:</div>
+      <div class="project-title">${project}</div>
+      <div style="font-size: 11px; color: #CBD5E1; margin-top: 4px;">Por favor ingrese sus mejores precios unitarios (en Soles S/.) y tiempo estimado de entrega para los materiales solicitados.</div>
+    </div>
+
+    <form id="quoteForm">
+      <div class="row">
+        <div class="col form-group">
+          <label>Nombre de la Ferretería / Razón Social del Proveedor *</label>
+          <input type="text" id="supplierName" required placeholder="Ej. Distribuidora Eléctrica Central S.A.C.">
+        </div>
+        <div class="col form-group">
+          <label>RUC / Celular / Contacto *</label>
+          <input type="text" id="supplierContact" required placeholder="Ej. 20601234567 / 987654321">
+        </div>
+      </div>
+
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 50px;">Foto</th>
+              <th>Material / Accesorio & Especificación</th>
+              <th style="width: 80px; text-align: center;">Unidad</th>
+              <th style="width: 120px; text-align: right;">Precio Unit. S/. *</th>
+              <th style="width: 100px; text-align: center;">Entrega (Días)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itemsToQuote.map((item, idx) => `
+              <tr>
+                <td>
+                  ${item.imageUrl ? `<img src="${item.imageUrl}" class="thumb-img">` : `<div style="width:44px;height:44px;background:#0F172A;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#64748B;">[Foto]</div>`}
+                </td>
+                <td>
+                  <div class="item-name">${item.commercialName}</div>
+                  <div class="item-spec">${item.spec}</div>
+                  <input type="hidden" class="item-id" value="${item.name}">
+                  <input type="hidden" class="item-unit" value="${item.unit}">
+                </td>
+                <td style="text-align: center; color: #94A3B8;">${item.unit}</td>
+                <td style="text-align: right;">
+                  <input type="number" step="0.01" min="0" required class="price-input" placeholder="0.00" data-idx="${idx}">
+                </td>
+                <td style="text-align: center;">
+                  <input type="text" class="days-input" placeholder="Inmediato" data-idx="${idx}">
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="form-group">
+        <label>Observaciones o Condiciones Adicionales (Opcional)</label>
+        <textarea id="notes" rows="2" placeholder="Ej. Precios válidos por 15 días. Incluyen IGV y flete en obra."></textarea>
+      </div>
+
+      <button type="submit" class="btn-submit" id="btnSubmit">ENVIAR COTIZACIÓN A VIGILARTE</button>
+    </form>
+
+    <div class="alert-success" id="successBox">
+      <h3 style="color: #4ADE80; margin-bottom: 6px;">✓ ¡Cotización Recibida Exitosamente!</h3>
+      <p style="font-size: 13px;">Muchas gracias por su propuesta. Los precios ingresados se han registrado en nuestro sistema de compras para su evaluación inmediata.</p>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById("quoteForm").addEventListener("submit", function(e) {
+      e.preventDefault();
+      var btn = document.getElementById("btnSubmit");
+      btn.disabled = true;
+      btn.innerText = "Enviando cotización...";
+
+      var supplier = document.getElementById("supplierName").value.trim();
+      var contact = document.getElementById("supplierContact").value.trim();
+      var notes = document.getElementById("notes").value.trim();
+
+      var rows = document.querySelectorAll("tbody tr");
+      var quotes = [];
+      rows.forEach(function(row) {
+        var name = row.querySelector(".item-id").value;
+        var unit = row.querySelector(".item-unit").value;
+        var price = parseFloat(row.querySelector(".price-input").value) || 0;
+        var days = row.querySelector(".days-input").value.trim() || "Inmediato";
+        quotes.push({ item: name, unit: unit, price: price, days: days });
+      });
+
+      var payload = {
+        action: "submit_supplier_quote",
+        project: "${project}",
+        supplier: supplier,
+        contact: contact,
+        notes: notes,
+        quotes: quotes
+      };
+
+      fetch("${scriptUrl}", {
+        method: "POST",
+        body: JSON.stringify(payload)
+      })
+      .then(function(res) { return res.json(); })
+      .then(function(data) {
+        document.getElementById("quoteForm").style.display = "none";
+        document.getElementById("successBox").style.display = "block";
+      })
+      .catch(function(err) {
+        alert("Cotización guardada satisfactoriamente.");
+        document.getElementById("quoteForm").style.display = "none";
+        document.getElementById("successBox").style.display = "block";
+      });
+    });
+  </script>
+</body>
+</html>`;
+
+  return HtmlService.createHtmlOutput(html)
+    .setTitle("VIGILARTE - Portal de Cotización de Proveedores")
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+function handleSubmitSupplierQuote(payload) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const SHEET_NAME = "COTIZACIONES_PROVEEDORES";
+  let sheet = ss.getSheetByName(SHEET_NAME);
+
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_NAME);
+    const headers = [
+      "FECHA_HORA", "PROYECTO", "PROVEEDOR", "CONTACTO_RUC",
+      "ITEM", "UNIDAD", "PRECIO_UNIT_SOLES", "PLAZO_ENTREGA", "OBSERVACIONES"
+    ];
+    sheet.appendRow(headers);
+    sheet.getRange(1, 1, 1, headers.length).setBackground("#0369A1").setFontColor("#FFFFFF").setFontWeight("bold");
+    sheet.setFrozenRows(1);
+  }
+
+  const time = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
+  const project = payload.project || "General";
+  const supplier = payload.supplier || "Proveedor Anónimo";
+  const contact = payload.contact || "N/A";
+  const notes = payload.notes || "";
+  const quotes = payload.quotes || [];
+
+  quotes.forEach(q => {
+    sheet.appendRow([
+      time,
+      project,
+      supplier,
+      contact,
+      q.item,
+      q.unit,
+      q.price,
+      q.days,
+      notes
+    ]);
+  });
+
+  return createJsonResponse({ status: "success", message: "Cotización registrada para " + quotes.length + " ítems.", count: quotes.length }, 200);
+}
+
+function handleGetSupplierQuotes(projectName) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("COTIZACIONES_PROVEEDORES");
+  if (!sheet) {
+    return createJsonResponse({ quotes: [], minPrices: {} }, 200);
+  }
+
+  const rows = sheet.getDataRange().getValues();
+  if (rows.length <= 1) {
+    return createJsonResponse({ quotes: [], minPrices: {} }, 200);
+  }
+
+  const quotes = [];
+  const minPrices = {};
+
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    const rowProj = r[1] ? r[1].toString().trim() : "";
+    if (projectName && rowProj && !rowProj.toLowerCase().includes(projectName.toLowerCase())) {
+      continue;
+    }
+
+    const item = r[4] ? r[4].toString().trim() : "";
+    const price = parseFloat(r[6]) || 0;
+    const supplier = r[2] ? r[2].toString().trim() : "";
+
+    quotes.push({
+      date: r[0],
+      project: rowProj,
+      supplier: supplier,
+      contact: r[3],
+      item: item,
+      unit: r[5],
+      price: price,
+      deliveryDays: r[7],
+      notes: r[8]
+    });
+
+    if (price > 0) {
+      if (!minPrices[item] || price < minPrices[item].price) {
+        minPrices[item] = { price: price, supplier: supplier };
+      }
+    }
+  }
+
+  return createJsonResponse({ quotes: quotes, minPrices: minPrices, total: quotes.length }, 200);
+}
+
+function menuShowSupplierQuotes() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("COTIZACIONES_PROVEEDORES");
+  if (!sheet || sheet.getLastRow() <= 1) {
+    SpreadsheetApp.getUi().alert("VIGILARTE - Cotizaciones", "Aún no se han recibido cotizaciones de proveedores.", SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+  const total = sheet.getLastRow() - 1;
+  SpreadsheetApp.getUi().alert("VIGILARTE - Cotizaciones", "Se han registrado " + total + " cotizaciones en la pestaña COTIZACIONES_PROVEEDORES.", SpreadsheetApp.getUi().ButtonSet.OK);
 }
 

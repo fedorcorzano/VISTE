@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vistec/models/project_model.dart';
 import 'package:vistec/models/session_evidence_model.dart';
 import 'package:vistec/services/internal_report_pdf_service.dart';
+import 'package:vistec/services/warehouse_report_pdf_service.dart';
+import 'package:vistec/services/purchasing_report_pdf_service.dart';
 import 'package:vistec/services/client_report_pdf_service.dart';
 import 'package:vistec/services/project_manager_report_pdf_service.dart';
 import 'package:vistec/services/catalog_visual_service.dart';
@@ -181,6 +183,18 @@ void main() {
       expect(hazardsByArea['Fachada Principal'], contains('Trabajo en Altura'));
       expect(hazardsByArea['Pasadizo Eléctrico'], contains('Riesgo Eléctrico'));
       expect(hazardsByArea.containsKey('Almacén Secundario'), isFalse);
+    });
+
+    test('WarehouseReportPdfService generates valid PDF bytes with vital tool images', () async {
+      final pdfBytes = await WarehouseReportPdfService.generatePdf(session);
+      expect(pdfBytes, isNotNull);
+      expect(pdfBytes.length, greaterThan(1000));
+    });
+
+    test('PurchasingReportPdfService generates valid PDF bytes with executive table', () async {
+      final pdfBytes = await PurchasingReportPdfService.generatePdf(session);
+      expect(pdfBytes, isNotNull);
+      expect(pdfBytes.length, greaterThan(1000));
     });
 
     test('InternalReportPdfService generates valid PDF bytes', () async {

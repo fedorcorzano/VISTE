@@ -1,11 +1,13 @@
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:printing/printing.dart';
 import '../models/session_evidence_model.dart';
-import '../services/internal_report_pdf_service.dart';
+import '../services/warehouse_report_pdf_service.dart';
+import '../services/purchasing_report_pdf_service.dart';
 import '../services/project_manager_report_pdf_service.dart';
 import '../services/client_report_pdf_service.dart';
 import '../services/catalog_visual_service.dart';
+import '../services/google_sheets_service.dart';
 import 'catalog_manager_screen.dart';
 
 class ProjectSummaryReportScreen extends StatefulWidget {
@@ -24,7 +26,8 @@ class ProjectSummaryReportScreen extends StatefulWidget {
 class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  Uint8List? _internalPdfBytes;
+  Uint8List? _warehousePdfBytes;
+  Uint8List? _purchasingPdfBytes;
   Uint8List? _managerPdfBytes;
   Uint8List? _clientPdfBytes;
   bool _isLoadingPdf = false;
@@ -32,7 +35,7 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
     _generatePdfsInBackground();
   }
 
@@ -45,15 +48,18 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
   Future<void> _generatePdfsInBackground() async {
     setState(() => _isLoadingPdf = true);
     try {
-      final internal =
-          await InternalReportPdfService.generatePdf(widget.session);
+      final warehouse =
+          await WarehouseReportPdfService.generatePdf(widget.session);
+      final purchasing =
+          await PurchasingReportPdfService.generatePdf(widget.session);
       final manager =
           await ProjectManagerReportPdfService.generatePdf(widget.session);
       final client =
           await ClientReportPdfService.generatePdf(widget.session);
       if (mounted) {
         setState(() {
-          _internalPdfBytes = internal;
+          _warehousePdfBytes = warehouse;
+          _purchasingPdfBytes = purchasing;
           _managerPdfBytes = manager;
           _clientPdfBytes = client;
           _isLoadingPdf = false;
@@ -232,12 +238,13 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
           labelColor: const Color(0xFF38BDF8),
           unselectedLabelColor: Colors.white60,
           labelStyle:
-              const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold),
+              const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
           tabs: const [
-            Tab(icon: Icon(Icons.dashboard_outlined, size: 19), text: 'Dashboard'),
-            Tab(icon: Icon(Icons.shopping_cart_outlined, size: 19), text: 'Compras'),
-            Tab(icon: Icon(Icons.engineering_outlined, size: 19), text: 'Gestor'),
-            Tab(icon: Icon(Icons.security_outlined, size: 19), text: 'Cliente SST'),
+            Tab(icon: Icon(Icons.dashboard_outlined, size: 18), text: 'Dashboard'),
+            Tab(icon: Icon(Icons.handyman_outlined, size: 18), text: 'Almacén'),
+            Tab(icon: Icon(Icons.shopping_cart_outlined, size: 18), text: 'Compras'),
+            Tab(icon: Icon(Icons.engineering_outlined, size: 18), text: 'Gestor'),
+            Tab(icon: Icon(Icons.security_outlined, size: 18), text: 'Cliente SST'),
           ],
         ),
       ),
@@ -245,7 +252,8 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
         controller: _tabController,
         children: [
           _buildDashboardTab(),
-          _buildPdfPreviewTab(_internalPdfBytes, 'VIGILARTE_Reporte_Compras.pdf'),
+          _buildPdfPreviewTab(_warehousePdfBytes, 'VIGILARTE_Reporte_Almacen.pdf'),
+          _buildPurchasingTab(),
           _buildPdfPreviewTab(_managerPdfBytes, 'VIGILARTE_Reporte_Gestor.pdf'),
           _buildPdfPreviewTab(_clientPdfBytes, 'VIGILARTE_Reporte_Cliente_SST.pdf'),
         ],
@@ -801,4 +809,251 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
       ],
     );
   }
+
+  /// Pestaña de Compras con barra de cotización de proveedores
+  Widget _buildPurchasingTab() {
+    return Column(
+      children: [
+        // Action banner para cotización digital de proveedores
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          color: const Color(0xFF1E293B),
+          child: Row(
+            children: [
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Cotización con Proveedores',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Enviar enlace a 3 o más proveedores para comparar',
+                      style: TextStyle(color: Colors.white70, fontSize: 10),
+                    ),
+                  ],
+                ),
+              ),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0284C7),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                icon: const Icon(Icons.share, size: 14),
+                label: const Text('Enviar Link', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                onPressed: _shareSupplierQuoteLink,
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF10B981),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                icon: const Icon(Icons.payments_outlined, size: 14),
+                label: const Text('Precios', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                onPressed: _viewSupplierQuotesDialog,
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: _buildPdfPreviewTab(_purchasingPdfBytes, 'VIGILARTE_Reporte_Compras.pdf'),
+        ),
+      ],
+    );
+  }
+
+  void _shareSupplierQuoteLink() {
+    final sheetsService = GoogleSheetsService();
+    final materials = widget.session.getMaterialsWithFrequency();
+    final accessories = widget.session.getConsolidatedAccessories();
+    final allItems = [
+      ...materials.map((m) => m.name),
+      ...accessories,
+    ];
+
+    final quoteUrl = sheetsService.getSupplierQuoteUrl(
+      widget.session.project.proyecto,
+      items: allItems,
+    );
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.link, color: Color(0xFF38BDF8), size: 24),
+            SizedBox(width: 8),
+            Text('Enlace para Proveedores', style: TextStyle(color: Colors.white, fontSize: 16)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Puedes enviar este enlace a 3 o más ferreterías/distribuidores. Cada proveedor ingresará sus precios unitarios y tiempos de entrega:',
+              style: TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F172A),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFF334155)),
+              ),
+              child: SelectableText(
+                quoteUrl,
+                style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 11),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cerrar', style: TextStyle(color: Colors.white70)),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF0284C7),
+              foregroundColor: Colors.white,
+            ),
+            icon: const Icon(Icons.copy, size: 16),
+            label: const Text('Copiar Enlace'),
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: quoteUrl));
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('✓ Enlace copiado al portapapeles. Listo para enviar por WhatsApp o Correo.'),
+                  backgroundColor: Color(0xFF10B981),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _viewSupplierQuotesDialog() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(
+        child: CircularProgressIndicator(color: Color(0xFF38BDF8)),
+      ),
+    );
+
+    final sheetsService = GoogleSheetsService();
+    final data = await sheetsService.fetchSupplierQuotes(widget.session.project.proyecto);
+
+    if (!mounted) return;
+    Navigator.pop(context); // cerrar spinner
+
+    final List quotes = (data['quotes'] as List?) ?? [];
+    final Map minPrices = (data['minPrices'] as Map?) ?? {};
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.compare_arrows, color: Color(0xFF10B981), size: 24),
+            const SizedBox(width: 8),
+            Text(
+              'Cotizaciones (${quotes.length})',
+              style: const TextStyle(color: Colors.white, fontSize: 16),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: quotes.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
+                  child: Text(
+                    'Aún no se han recibido cotizaciones de proveedores para este proyecto.\nEnvía el enlace a tus proveedores para recibir precios.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white70, fontSize: 13),
+                  ),
+                )
+              : ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: quotes.length,
+                  separatorBuilder: (ctx, i) => const Divider(color: Color(0xFF334155)),
+                  itemBuilder: (ctx, i) {
+                    final q = quotes[i] as Map;
+                    final item = q['item'] ?? '';
+                    final price = q['price'] ?? 0;
+                    final supplier = q['supplier'] ?? 'Proveedor';
+                    final isBest = minPrices[item] != null && minPrices[item]['supplier'] == supplier;
+
+                    return ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '$item (${q['unit'] ?? "Und"})',
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                            ),
+                          ),
+                          Text(
+                            'S/. $price',
+                            style: TextStyle(
+                              color: isBest ? const Color(0xFF4ADE80) : const Color(0xFF38BDF8),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                      subtitle: Row(
+                        children: [
+                          Text('De: $supplier', style: const TextStyle(color: Colors.white70, fontSize: 11)),
+                          if (isBest) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF065F46),
+                                borderRadius: BorderRadius.circular(3),
+                              ),
+                              child: const Text('MEJOR PRECIO', style: TextStyle(color: Color(0xFFA7F3D0), fontSize: 8, fontWeight: FontWeight.bold)),
+                            ),
+                          ],
+                        ],
+                      ),
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cerrar', style: TextStyle(color: Color(0xFF38BDF8))),
+          ),
+        ],
+      ),
+    );
+  }
 }
+

@@ -243,4 +243,31 @@ class GoogleSheetsService {
       return SheetsResponse(isSuccess: false, message: 'Error de red: $e');
     }
   }
+
+  /// 5. Genera la URL pública para enviar a múltiples proveedores (3 o más) para cotizar
+  String getSupplierQuoteUrl(String projectName, {List<String>? items}) {
+    final base = '$_webAppUrl?action=cotizar&project=${Uri.encodeComponent(projectName)}';
+    if (items != null && items.isNotEmpty) {
+      return '$base&items=${Uri.encodeComponent(items.join(","))}';
+    }
+    return base;
+  }
+
+  /// 6. Consulta las cotizaciones enviadas por los distintos proveedores para el proyecto
+  Future<Map<String, dynamic>> fetchSupplierQuotes(String projectName) async {
+    try {
+      final url = '$_webAppUrl?action=get_supplier_quotes&project=${Uri.encodeComponent(projectName)}';
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data is Map<String, dynamic>) {
+          return data;
+        }
+      }
+      return {'quotes': [], 'minPrices': {}};
+    } catch (e) {
+      debugPrint('Error al consultar cotizaciones de proveedores: $e');
+      return {'quotes': [], 'minPrices': {}};
+    }
+  }
 }
