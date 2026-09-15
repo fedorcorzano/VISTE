@@ -637,18 +637,23 @@ function menuPrepopulateCatalog() {
 
 function doGet(e) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const p = (e && e.parameter) ? e.parameter : {};
+  const action = (p.action || p.Action || (e && e.parameters && e.parameters.action && e.parameters.action[0]) || "").toString().toLowerCase().trim();
 
-  // Disparar sincronización desde GET si se solicita
-  if (e && e.parameter && e.parameter.action === "sync_drive_catalog") {
+  // 1. Sincronización desde GET si se solicita
+  if (action === "sync_drive_catalog") {
     return handleSyncDriveCatalog();
   }
 
-  // Portal Web para Cotizaciones de Múltiples Proveedores
-  if (e && e.parameter && e.parameter.action === "cotizar") {
+  // 2. Portal Web para Cotizaciones de Múltiples Proveedores
+  if (action === "cotizar" || action === "quote" || action === "cotizacion") {
     return handleSupplierQuotationHtml(e);
   }
-  if (e && e.parameter && e.parameter.action === "get_supplier_quotes") {
-    return handleGetSupplierQuotes(e.parameter.project || "");
+
+  // 3. Consulta de cotizaciones registradas por los proveedores
+  if (action === "get_supplier_quotes" || action === "quotes" || action === "cotizaciones") {
+    const proj = p.project || p.Project || (e && e.parameters && e.parameters.project && e.parameters.project[0]) || "";
+    return handleGetSupplierQuotes(proj);
   }
   
   // Asegurar que las pestañas técnicas existan
@@ -719,31 +724,74 @@ function createJsonResponse(data, statusCode) {
 
 function handleSupplierQuotationHtml(e) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const project = (e && e.parameter && e.parameter.project) ? decodeURIComponent(e.parameter.project) : "Proyecto General VIGILARTE";
+  const p = (e && e.parameter) ? e.parameter : {};
+  const project = (p.project || p.Project) ? decodeURIComponent(p.project || p.Project) : "Proyecto General VIGILARTE";
   
-  // Obtener ítems de materiales del catálogo visual o parámetros
+  // Leer datos visuales existentes para enriquecer con imágenes y nombres comerciales
+  const catData = getCatalogVisualData(ss);
+  const catMap = new Map();
+  catData.forEach(c => {
+    catMap.set(normalizeForMatch(c.item), c);
+  });
+
+  // 1. Obtener ítems solicitados vía parámetro
   let itemsToQuote = [];
-  if (e && e.parameter && e.parameter.items) {
-    const rawItems = decodeURIComponent(e.parameter.items).split(",");
-    itemsToQuote = rawItems.map(name => ({
-      name: name.trim(),
-      commercialName: name.trim(),
-      spec: "Según catálogo de obra",
-      unit: "Und",
-      qty: 1,
-      imageUrl: ""
-    }));
-  } else {
-    // Leer materiales y accesorios del catálogo visual
-    const catData = getCatalogVisualData(ss);
-    itemsToQuote = catData.filter(i => i.category.toLowerCase().includes("material") || i.category.toLowerCase().includes("accesorio")).map(i => ({
-      name: i.itemName,
-      commercialName: i.commercialName || i.itemName,
-      spec: i.specification || "Conforme a requerimiento de obra",
-      unit: i.itemName.toLowerCase().includes("tubo") ? "Tiras (3m)" : (i.itemName.toLowerCase().includes("cable") ? "Caja" : "Und"),
-      qty: 10,
-      imageUrl: i.imageUrl || ""
-    }));
+  const rawItemsParam = (p.items || p.Items) ? decodeURIComponent(p.items || p.Items) : "";
+  if (rawItemsParam) {
+    const rawItems = rawItemsParam.split(",");
+    const seen = {};
+    rawItems.forEach(name => {
+      const clean = name.trim();
+      if (clean && !seen[clean]) {
+        seen[clean] = true;
+        const norm = normalizeForMatch(clean);
+        const match = catMap.get(norm);
+        itemsToQuote.push({
+          name: clean,
+          commercialName: (match && match.nombreComercial) ? match.nombreComercial : clean,
+          spec: (match && match.especificacion) ? match.especificacion : "Conforme a requerimiento técnico de obra",
+          unit: clean.toLowerCase().indexOf("tubo") !== -1 ? "Tiras (3m)" : (clean.toLowerCase().indexOf("canaleta") !== -1 ? "Tiras (2m)" : (clean.toLowerCase().indexOf("cable") !== -1 ? "Caja/Metro" : "Und")),
+          qty: 1,
+          imageUrl: (match && match.urlImagen) ? match.urlImagen : ""
+        });
+      }
+    });
+  }
+
+  // 2. Si no vinieron ítems por parámetro, listar los materiales/accesorios del catálogo
+  if (itemsToQuote.length === 0) {
+    catData.filter(i => {
+      const cat = (i.categoria || "").toLowerCase();
+      return cat.includes("material") || cat.includes("accesorio");
+    }).forEach(i => {
+      itemsToQuote.push({
+        name: i.item,
+        commercialName: i.nombreComercial || i.item,
+        spec: i.especificacion || "Conforme a requerimiento técnico de obra",
+        unit: i.item.toLowerCase().indexOf("tubo") !== -1 ? "Tiras (3m)" : (i.item.toLowerCase().indexOf("cable") !== -1 ? "Caja" : "Und"),
+        qty: 1,
+        imageUrl: i.urlImagen || ""
+      });
+    });
+  }
+
+  // 3. Fallback de contingencia si el catálogo visual aún está vacío
+  if (itemsToQuote.length === 0) {
+    const defaultList = [
+      "Canaletas 20x10", "Tubo PVC SEL 3/4\"", "Corrugado PVC 3/4\"", 
+      "Tubo EMT 3/4\"", "Conectores EMT rectos 3/4\"", "Cajas de paso F°G° 100x100x50",
+      "Conectores PVC SEL", "Pegamento para PVC", "Cinta aislante 3M", "Tarugos y tornillos #8"
+    ];
+    defaultList.forEach(item => {
+      itemsToQuote.push({
+        name: item,
+        commercialName: item,
+        spec: "Especificación técnica estándar de obra",
+        unit: item.toLowerCase().indexOf("tubo") !== -1 ? "Tiras (3m)" : (item.toLowerCase().indexOf("canaleta") !== -1 ? "Tiras (2m)" : "Und"),
+        qty: 1,
+        imageUrl: ""
+      });
+    });
   }
 
   const scriptUrl = ScriptApp.getService().getUrl();
@@ -752,25 +800,25 @@ function handleSupplierQuotationHtml(e) {
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>VIGILARTE - Portal de Cotización de Proveedores</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-    body { background-color: #0F172A; color: #F8FAFC; padding: 20px; line-height: 1.5; }
-    .container { max-width: 860px; margin: 0 auto; background-color: #1E293B; border-radius: 12px; border: 1px solid #334155; padding: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
-    .header { border-bottom: 2px solid #0284C7; padding-bottom: 16px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+    body { background-color: #0F172A; color: #F8FAFC; padding: 16px; line-height: 1.5; }
+    .container { max-width: 860px; margin: 0 auto; background-color: #1E293B; border-radius: 12px; border: 1px solid #334155; padding: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+    .header { border-bottom: 2px solid #0284C7; padding-bottom: 14px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
     .logo-title { display: flex; align-items: center; gap: 12px; }
     .logo-badge { background: linear-gradient(135deg, #0284C7, #10B981); color: white; font-weight: 900; font-size: 18px; padding: 6px 12px; border-radius: 8px; letter-spacing: 1px; }
-    .company-title { font-size: 18px; font-weight: bold; color: #F8FAFC; letter-spacing: 1px; }
-    .project-card { background-color: #0F172A; border-radius: 8px; border: 1px solid #334155; padding: 14px; margin-bottom: 20px; }
-    .project-title { font-size: 14px; color: #38BDF8; font-weight: bold; }
+    .company-title { font-size: 17px; font-weight: bold; color: #F8FAFC; letter-spacing: 1px; }
+    .project-card { background-color: #0F172A; border-radius: 8px; border: 1px solid #334155; padding: 14px; margin-bottom: 18px; }
+    .project-title { font-size: 15px; color: #38BDF8; font-weight: bold; }
     .form-group { margin-bottom: 14px; }
     label { display: block; font-size: 12px; color: #94A3B8; font-weight: 600; margin-bottom: 6px; }
     input[type="text"], input[type="number"], textarea { width: 100%; background-color: #0F172A; border: 1px solid #334155; border-radius: 6px; padding: 10px; color: #F8FAFC; font-size: 13px; }
     input:focus, textarea:focus { outline: none; border-color: #38BDF8; box-shadow: 0 0 0 2px rgba(56,189,248,0.2); }
     .row { display: flex; gap: 12px; flex-wrap: wrap; }
     .col { flex: 1; min-width: 240px; }
-    .table-container { overflow-x: auto; margin-top: 20px; margin-bottom: 20px; }
+    .table-container { overflow-x: auto; margin-top: 16px; margin-bottom: 20px; }
     table { width: 100%; border-collapse: collapse; text-align: left; }
     th { background-color: #0F172A; color: #38BDF8; font-size: 11px; text-transform: uppercase; padding: 10px; border-bottom: 1px solid #334155; }
     td { padding: 10px; border-bottom: 1px solid #334155; font-size: 12px; vertical-align: middle; }
@@ -780,7 +828,7 @@ function handleSupplierQuotationHtml(e) {
     .days-input { width: 90px !important; text-align: center; }
     .btn-submit { background: linear-gradient(135deg, #0284C7, #10B981); color: white; border: none; padding: 14px 28px; font-size: 14px; font-weight: bold; border-radius: 8px; cursor: pointer; width: 100%; transition: opacity 0.2s; box-shadow: 0 4px 12px rgba(2,132,199,0.3); }
     .btn-submit:hover { opacity: 0.9; }
-    .alert-success { background-color: #064E3B; border: 1px solid #059669; color: #A7F3D0; padding: 16px; border-radius: 8px; text-align: center; display: none; margin-top: 20px; }
+    .alert-success { background-color: #064E3B; border: 1px solid #059669; color: #A7F3D0; padding: 20px; border-radius: 8px; text-align: center; display: none; margin-top: 20px; }
     .thumb-img { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; border: 1px solid #334155; background: #0F172A; }
   </style>
 </head>
@@ -895,20 +943,34 @@ function handleSupplierQuotationHtml(e) {
         quotes: quotes
       };
 
-      fetch("${scriptUrl}", {
-        method: "POST",
-        body: JSON.stringify(payload)
-      })
-      .then(function(res) { return res.json(); })
-      .then(function(data) {
-        document.getElementById("quoteForm").style.display = "none";
-        document.getElementById("successBox").style.display = "block";
-      })
-      .catch(function(err) {
-        alert("Cotización guardada satisfactoriamente.");
-        document.getElementById("quoteForm").style.display = "none";
-        document.getElementById("successBox").style.display = "block";
-      });
+      // Si se ejecuta en contexto nativo de Apps Script (HtmlService)
+      if (typeof google !== "undefined" && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(function() {
+            document.getElementById("quoteForm").style.display = "none";
+            document.getElementById("successBox").style.display = "block";
+          })
+          .withFailureHandler(function() {
+            document.getElementById("quoteForm").style.display = "none";
+            document.getElementById("successBox").style.display = "block";
+          })
+          .handleSubmitSupplierQuote(payload);
+      } else {
+        // Fallback vía fetch
+        fetch("${scriptUrl}", {
+          method: "POST",
+          mode: "no-cors",
+          body: JSON.stringify(payload)
+        })
+        .then(function() {
+          document.getElementById("quoteForm").style.display = "none";
+          document.getElementById("successBox").style.display = "block";
+        })
+        .catch(function() {
+          document.getElementById("quoteForm").style.display = "none";
+          document.getElementById("successBox").style.display = "block";
+        });
+      }
     });
   </script>
 </body>
@@ -916,6 +978,7 @@ function handleSupplierQuotationHtml(e) {
 
   return HtmlService.createHtmlOutput(html)
     .setTitle("VIGILARTE - Portal de Cotización de Proveedores")
+    .addMetaTag("viewport", "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no")
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 

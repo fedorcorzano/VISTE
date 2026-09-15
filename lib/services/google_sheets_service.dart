@@ -246,9 +246,15 @@ class GoogleSheetsService {
 
   /// 5. Genera la URL pública para enviar a múltiples proveedores (3 o más) para cotizar
   String getSupplierQuoteUrl(String projectName, {List<String>? items}) {
-    final base = '$_webAppUrl?action=cotizar&project=${Uri.encodeComponent(projectName)}';
+    final base =
+        '$_webAppUrl?action=cotizar&project=${Uri.encodeComponent(projectName)}';
     if (items != null && items.isNotEmpty) {
-      return '$base&items=${Uri.encodeComponent(items.join(","))}';
+      final sanitizedItems = items
+          .map((item) => item.replaceAll(',', ';').trim())
+          .where((item) => item.isNotEmpty)
+          .toSet()
+          .toList();
+      return '$base&items=${Uri.encodeComponent(sanitizedItems.join(","))}';
     }
     return base;
   }
