@@ -564,7 +564,7 @@ class ClientReportPdfService {
                 // Imagen Fotográfica centrada horizontalmente, manteniendo gran detalle
                 pw.Center(
                   child: pw.Container(
-                    height: 250,
+                    height: 245,
                     decoration: pw.BoxDecoration(
                       border: pw.Border.all(color: borderGray, width: 1),
                       borderRadius: pw.BorderRadius.circular(6),
@@ -575,11 +575,56 @@ class ClientReportPdfService {
                     ),
                   ),
                 ),
-                pw.SizedBox(height: 8),
+                pw.SizedBox(height: 7),
+
+                // Recuadro de Peligros identificados (antes de la tabla de jerarquía)
+                pw.Container(
+                  padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4.5),
+                  decoration: pw.BoxDecoration(
+                    color: lightBg,
+                    borderRadius: pw.BorderRadius.circular(4),
+                    border: pw.Border.all(color: borderGray, width: 0.8),
+                  ),
+                  child: pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    children: [
+                      pw.Expanded(
+                        child: pw.RichText(
+                          text: pw.TextSpan(
+                            children: [
+                              pw.TextSpan(
+                                text: 'Peligros identificados: ',
+                                style: pw.TextStyle(
+                                  fontSize: 7.5,
+                                  fontWeight: pw.FontWeight.bold,
+                                  color: primaryColor,
+                                ),
+                              ),
+                              pw.TextSpan(
+                                text: photo.peligros.isEmpty
+                                    ? 'Area conforme / Sin riesgos criticos'
+                                    : photo.peligros.join(', '),
+                                style: const pw.TextStyle(
+                                  fontSize: 7.5,
+                                  color: PdfColors.grey800,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      pw.Text(
+                        'VIGILARTE SST',
+                        style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold, color: primaryColor),
+                      ),
+                    ],
+                  ),
+                ),
+                pw.SizedBox(height: 7),
 
                 // Título de la Tabla de Jerarquía
                 pw.Text(
-                  'Matriz de Jerarquía de Control de Riesgos Operacionales (ISO 45001 / Ley 29783):',
+                  'Matriz de Jerarquia de Control de Riesgos Operacionales (ISO 45001 / Ley 29783):',
                   style: pw.TextStyle(
                     fontSize: 8,
                     fontWeight: pw.FontWeight.bold,
@@ -590,30 +635,6 @@ class ClientReportPdfService {
 
                 // Tabla con los campos solicitados: Jerarquía | Medida de Control Preventivo | Responsable
                 _buildHierarchyControlsTable(photo.peligros, primaryColor, borderGray, lightBg),
-                pw.SizedBox(height: 6),
-
-                // Fila informativa inferior
-                pw.Container(
-                  padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: pw.BoxDecoration(
-                    color: lightBg,
-                    borderRadius: pw.BorderRadius.circular(4),
-                    border: pw.Border.all(color: borderGray, width: 0.5),
-                  ),
-                  child: pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                    children: [
-                      pw.Text(
-                        'Peligros identificados: ${photo.peligros.isEmpty ? "Área conforme / Sin riesgos críticos" : photo.peligros.join(", ")}',
-                        style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey800),
-                      ),
-                      pw.Text(
-                        'VIGILARTE SST - Elaborado por Fedor Corzano',
-                        style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold, color: primaryColor),
-                      ),
-                    ],
-                  ),
-                ),
               ],
             );
           },
@@ -706,11 +727,11 @@ class ClientReportPdfService {
     }
 
     final rows = [
-      ('Eliminacion', elim, elimResp, const PdfColor.fromInt(0xFFDC2626)),
-      ('Sustitucion', sust, sustResp, const PdfColor.fromInt(0xFFEA580C)),
+      ('Eliminacion', elim, elimResp, const PdfColor.fromInt(0xFF16A34A)),
+      ('Sustitucion', sust, sustResp, const PdfColor.fromInt(0xFF0D9488)),
       ('Ingenieria', ing, ingResp, const PdfColor.fromInt(0xFFD97706)),
-      ('Administracion', adm, admResp, const PdfColor.fromInt(0xFF0284C7)),
-      ('EPP', epp, eppResp, const PdfColor.fromInt(0xFF16A34A)),
+      ('Administracion', adm, admResp, const PdfColor.fromInt(0xFFEA580C)),
+      ('EPP', epp, eppResp, const PdfColor.fromInt(0xFFDC2626)),
     ];
 
     return pw.Table(
@@ -745,9 +766,9 @@ class ClientReportPdfService {
                 padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 3),
                 child: pw.Row(
                   children: [
-                    pw.Container(width: 5, height: 5, decoration: pw.BoxDecoration(shape: pw.BoxShape.circle, color: r.$4)),
+                    pw.Container(width: 6, height: 6, decoration: pw.BoxDecoration(shape: pw.BoxShape.circle, color: r.$4)),
                     pw.SizedBox(width: 4),
-                    pw.Text(r.$1, style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold, color: primaryColor)),
+                    pw.Text(r.$1, style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold, color: r.$4)),
                   ],
                 ),
               ),
