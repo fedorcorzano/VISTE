@@ -179,18 +179,18 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                           Row(
                             crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
-                              // a) Botón "Mis proyectos" a la izquierda
+                              // a) Botón "Mis proyectos" a la izquierda (Azul Corporativo #001F2F con acento amarillo)
                               Expanded(
                                 flex: 5,
                                 child: SizedBox(
                                   height: 46,
                                   child: ElevatedButton(
                                     style: ElevatedButton.styleFrom(
-                                      backgroundColor: const Color(0xFF0F172A), // Slate 900
+                                      backgroundColor: const Color(0xFF001F2F), // COLOR 01 AZUL VIGILARTE
                                       foregroundColor: Colors.white,
                                       padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
                                       elevation: 2,
-                                      shadowColor: Colors.black26,
+                                      shadowColor: const Color(0xFF001F2F).withValues(alpha: 0.3),
                                       shape: RoundedRectangleBorder(
                                         borderRadius: BorderRadius.circular(10),
                                       ),
@@ -199,13 +199,18 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                                     child: const Column(
                                       mainAxisAlignment: MainAxisAlignment.center,
                                       children: [
-                                        Icon(Icons.folder_shared_outlined, size: 16, color: Color(0xFF38BDF8)),
+                                        Icon(
+                                          Icons.folder_shared_outlined,
+                                          size: 16,
+                                          color: Color(0xFFE3A51A), // COLOR 02 AMARILLO VIGILARTE
+                                        ),
                                         SizedBox(height: 2),
                                         Text(
                                           'Mis proyectos',
                                           style: TextStyle(
                                             fontSize: 10.5,
                                             fontWeight: FontWeight.bold,
+                                            color: Colors.white,
                                           ),
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
@@ -218,7 +223,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 
                               const SizedBox(width: 6),
 
-                              // b) Campo de Clave en el centro (directamente debajo del QR)
+                              // b) Campo de Clave en el centro (Borde Amarillo #E3A51A, texto Azul #001F2F)
                               Expanded(
                                 flex: 6,
                                 child: SizedBox(
@@ -229,7 +234,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                                     obscureText: _obscurePassword,
                                     textCapitalization: TextCapitalization.characters,
                                     style: const TextStyle(
-                                      color: Color(0xFF0F172A),
+                                      color: Color(0xFF001F2F), // COLOR 01 AZUL
                                       fontSize: 13.5,
                                       fontWeight: FontWeight.bold,
                                       letterSpacing: 2.0,
@@ -238,7 +243,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                                     decoration: InputDecoration(
                                       hintText: '••••••••',
                                       hintStyle: const TextStyle(
-                                        color: Colors.black26,
+                                        color: Color(0x66001F2F),
                                         fontSize: 13,
                                         letterSpacing: 2.0,
                                       ),
@@ -247,7 +252,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                                       contentPadding: const EdgeInsets.symmetric(horizontal: 2, vertical: 8),
                                       prefixIcon: Icon(
                                         _isKeyValid ? Icons.lock_open_rounded : Icons.lock_outline_rounded,
-                                        color: _isKeyValid ? const Color(0xFF10B981) : const Color(0xFFF59E0B),
+                                        color: _isKeyValid ? const Color(0xFF10B981) : const Color(0xFFE3A51A), // AMARILLO
                                         size: 17,
                                       ),
                                       suffixIcon: IconButton(
@@ -255,7 +260,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                                         constraints: const BoxConstraints(maxWidth: 26),
                                         icon: Icon(
                                           _obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                                          color: Colors.black38,
+                                          color: const Color(0xFF001F2F).withValues(alpha: 0.5),
                                           size: 15,
                                         ),
                                         onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
@@ -263,15 +268,15 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                                       enabledBorder: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(10),
                                         borderSide: BorderSide(
-                                          color: _isKeyValid ? const Color(0xFF10B981) : const Color(0xFFF59E0B),
-                                          width: 1.8,
+                                          color: _isKeyValid ? const Color(0xFF10B981) : const Color(0xFFE3A51A), // AMARILLO
+                                          width: 2.0,
                                         ),
                                       ),
                                       focusedBorder: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(10),
                                         borderSide: BorderSide(
-                                          color: _isKeyValid ? const Color(0xFF10B981) : const Color(0xFFF59E0B),
-                                          width: 2.2,
+                                          color: _isKeyValid ? const Color(0xFF10B981) : const Color(0xFFE3A51A), // AMARILLO
+                                          width: 2.4,
                                         ),
                                       ),
                                     ),
@@ -282,16 +287,16 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 
                               const SizedBox(width: 6),
 
-                              // c) Botón "Buscar proyectos" a la derecha
+                              // c) Botón "Buscar proyectos" a la derecha (Borde y texto Azul Corporativo #001F2F)
                               Expanded(
                                 flex: 5,
                                 child: SizedBox(
                                   height: 46,
                                   child: OutlinedButton(
                                     style: OutlinedButton.styleFrom(
-                                      backgroundColor: const Color(0xFFF8FAFC),
-                                      foregroundColor: const Color(0xFF1E293B),
-                                      side: const BorderSide(color: Color(0xFFCBD5E1), width: 1.2),
+                                      backgroundColor: Colors.white,
+                                      foregroundColor: const Color(0xFF001F2F), // COLOR 01 AZUL
+                                      side: const BorderSide(color: Color(0xFF001F2F), width: 1.5),
                                       padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
                                       shape: RoundedRectangleBorder(
                                         borderRadius: BorderRadius.circular(10),
@@ -301,13 +306,18 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                                     child: const Column(
                                       mainAxisAlignment: MainAxisAlignment.center,
                                       children: [
-                                        Icon(Icons.search_rounded, size: 16, color: Color(0xFF475569)),
+                                        Icon(
+                                          Icons.search_rounded,
+                                          size: 16,
+                                          color: Color(0xFF001F2F), // AZUL
+                                        ),
                                         SizedBox(height: 2),
                                         Text(
                                           'Buscar proyectos',
                                           style: TextStyle(
                                             fontSize: 10.5,
                                             fontWeight: FontWeight.bold,
+                                            color: Color(0xFF001F2F),
                                           ),
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
@@ -322,26 +332,31 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 
                           const SizedBox(height: 10),
 
-                          // d) Botón "Registrar proyecto" debajo de los primeros 3
+                          // d) Botón "Registrar proyecto" debajo de los primeros 3 (ACCIÓN PRINCIPAL RESALTADA: AMARILLO #E3A51A)
                           SizedBox(
                             width: double.infinity,
                             height: 46,
                             child: ElevatedButton.icon(
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF0284C7), // Blue Vigilarte
-                                foregroundColor: Colors.white,
-                                elevation: 2,
-                                shadowColor: const Color(0xFF0284C7).withValues(alpha: 0.35),
+                                backgroundColor: const Color(0xFFE3A51A), // COLOR 02 AMARILLO VIGILARTE (RESALTA)
+                                foregroundColor: const Color(0xFF001F2F), // COLOR 01 AZUL VIGILARTE
+                                elevation: 3,
+                                shadowColor: const Color(0xFFE3A51A).withValues(alpha: 0.45),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                               ),
-                              icon: const Icon(Icons.add_circle_outline_rounded, size: 19),
+                              icon: const Icon(
+                                Icons.add_circle_outline_rounded,
+                                size: 19,
+                                color: Color(0xFF001F2F),
+                              ),
                               label: const Text(
                                 'Registrar proyecto',
                                 style: TextStyle(
-                                  fontSize: 14,
+                                  fontSize: 14.5,
                                   fontWeight: FontWeight.bold,
+                                  color: Color(0xFF001F2F),
                                   letterSpacing: 0.3,
                                 ),
                               ),
