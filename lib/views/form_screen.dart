@@ -3,6 +3,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../models/project_model.dart';
+import '../models/sticker_model.dart';
 import '../services/google_sheets_service.dart';
 import 'camera_overlay_screen.dart';
 
@@ -27,9 +28,9 @@ class _FormScreenState extends State<FormScreen> {
   final TextEditingController _mapaController =
       TextEditingController(text: 'Obteniendo GPS...');
 
-  String? _selectedProyecto;
-  List<String> _proyectosList = [];
-  bool _isLoadingCatalogs = true;
+  String? _selectedProyecto = TechnicalCatalogMatrix.defaultProyectos.first;
+  List<String> _proyectosList =
+      List<String>.from(TechnicalCatalogMatrix.defaultProyectos);
   bool _isGettingLocation = false;
 
   @override
@@ -98,26 +99,22 @@ class _FormScreenState extends State<FormScreen> {
   }
 
   Future<void> _loadCatalogs() async {
-    setState(() => _isLoadingCatalogs = true);
     try {
       final catalogs = await _sheetsService.fetchCatalogs();
       if (mounted) {
-        setState(() {
-          _proyectosList = catalogs['proyectos'] ?? [];
-          if (_proyectosList.isNotEmpty) {
-            _selectedProyecto = _proyectosList.first;
-          }
-          _isLoadingCatalogs = false;
-        });
+        final incoming = catalogs['proyectos'] ?? [];
+        if (incoming.isNotEmpty) {
+          setState(() {
+            _proyectosList = incoming;
+            if (_selectedProyecto == null ||
+                !_proyectosList.contains(_selectedProyecto)) {
+              _selectedProyecto = _proyectosList.first;
+            }
+          });
+        }
       }
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _proyectosList = ['Cámaras de videovigilancia', 'General'];
-          _selectedProyecto = _proyectosList.first;
-          _isLoadingCatalogs = false;
-        });
-      }
+      debugPrint('Error al cargar catálogos en form_screen: $e');
     }
   }
 
@@ -255,7 +252,7 @@ class _FormScreenState extends State<FormScreen> {
       backgroundColor: const Color(0xFF0F172A),
       appBar: AppBar(
         title: const Text(
-          'VISTEC • Control de Peligros',
+          'VISTE • Relevamiento de Información',
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
         ),
         backgroundColor: const Color(0xFF1E293B),
@@ -309,7 +306,7 @@ class _FormScreenState extends State<FormScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Paso 1: Datos de Inspección',
+                              'Paso 1: Relevamiento de Información',
                               style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.bold,
@@ -318,7 +315,7 @@ class _FormScreenState extends State<FormScreen> {
                             ),
                             SizedBox(height: 3),
                             Text(
-                              'Ingresa los datos para pasar a capturar y etiquetar la foto con materiales y estructuras.',
+                              'Ingresa los datos del proyecto para iniciar el relevamiento fotográfico de campo.',
                               style: TextStyle(
                                 color: Color(0xFF94A3B8),
                                 fontSize: 12,
@@ -411,16 +408,7 @@ class _FormScreenState extends State<FormScreen> {
                 const SizedBox(height: 14),
 
                 // Dropdown Proyecto desde Excel
-                _isLoadingCatalogs
-                    ? const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(12.0),
-                          child: CircularProgressIndicator(
-                            color: Color(0xFF38BDF8),
-                          ),
-                        ),
-                      )
-                    : Container(
+                Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 14,
                           vertical: 4,

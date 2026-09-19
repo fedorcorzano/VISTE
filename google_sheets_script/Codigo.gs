@@ -260,12 +260,9 @@ function initTechnicalTabs(ss) {
     ];
     accData.forEach(row => sAcc.appendRow(row));
     sAcc.setFrozenRows(1);
-  } else {
-    // Si ya existe, actualiza los encabezados de la fila 1 al formato limpio
-    sAcc.getRange(1, 1, 1, materialesCols.length).setValues([materialesCols]);
   }
 
-  // 2. Pestaña HERRAMIENTAS_MATERIAL
+  // 2. Pestaña HERRAMIENTAS_MATERIAL (SOLO crear si no existe, nunca sobreescribir)
   let sToolMat = ss.getSheetByName("HERRAMIENTAS_MATERIAL");
   if (!sToolMat) {
     sToolMat = ss.insertSheet("HERRAMIENTAS_MATERIAL");
@@ -283,11 +280,9 @@ function initTechnicalTabs(ss) {
     ];
     toolMatData.forEach(row => sToolMat.appendRow(row));
     sToolMat.setFrozenRows(1);
-  } else {
-    sToolMat.getRange(1, 1, 1, materialesCols.length).setValues([materialesCols]);
   }
 
-  // 3. Pestaña HERRAMIENTAS_ESTRUCTURA
+  // 3. Pestaña HERRAMIENTAS_ESTRUCTURA (SOLO crear si no existe, nunca sobreescribir)
   let sStruct = ss.getSheetByName("HERRAMIENTAS_ESTRUCTURA") || ss.getSheetByName("HERRAMIENTAS ESTRUCTURA");
   if (!sStruct) {
     sStruct = ss.insertSheet("HERRAMIENTAS_ESTRUCTURA");
@@ -304,8 +299,6 @@ function initTechnicalTabs(ss) {
     ];
     toolStructData.forEach(row => sStruct.appendRow(row));
     sStruct.setFrozenRows(1);
-  } else {
-    sStruct.getRange(1, 1, 1, estructurasCols.length).setValues([estructurasCols]);
   }
 
   // 4. Pestaña CATALOGO_VISUAL (Imágenes reales, nombres comerciales y especificaciones ampliables)
@@ -685,14 +678,17 @@ function doGet(e) {
   const herramientasEstructura = getSheetColumnsMap(ss, "HERRAMIENTAS_ESTRUCTURA");
   const catalogoVisual = getCatalogVisualData(ss);
 
-  // Materiales y estructuras pueden provenir de las cabeceras de las pestañas técnicas o de pestañas simples
-  const matKeys = Object.keys(accesoriosMaterial).length > 0 
-                    ? Object.keys(accesoriosMaterial) 
-                    : (Object.keys(herramientasMaterial).length > 0 ? Object.keys(herramientasMaterial) : getColumnData("Materiales"));
+  // Materiales y estructuras: recopilar dinámicamente todas las columnas creadas por el usuario sin omitir ninguna
+  const allMatMap = {};
+  Object.keys(accesoriosMaterial).forEach(k => { if (k && k.toString().trim()) allMatMap[k.toString().trim()] = true; });
+  Object.keys(herramientasMaterial).forEach(k => { if (k && k.toString().trim()) allMatMap[k.toString().trim()] = true; });
+  getColumnData("Materiales").forEach(k => { if (k && k.toString().trim()) allMatMap[k.toString().trim()] = true; });
+  const matKeys = Object.keys(allMatMap);
 
-  const structKeys = Object.keys(herramientasEstructura).length > 0 
-                      ? Object.keys(herramientasEstructura) 
-                      : getColumnData("Estructuras");
+  const allStructMap = {};
+  Object.keys(herramientasEstructura).forEach(k => { if (k && k.toString().trim()) allStructMap[k.toString().trim()] = true; });
+  getColumnData("Estructuras").forEach(k => { if (k && k.toString().trim()) allStructMap[k.toString().trim()] = true; });
+  const structKeys = Object.keys(allStructMap);
 
   const data = {
     proyectos: getColumnData("Proyectos"),

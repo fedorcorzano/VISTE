@@ -78,7 +78,7 @@ class ProjectManagerReportPdfService {
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
                 pw.Text(
-                  'VIGILARTE - Gestor de Proyectos - Elaborado por Fedor Corzano',
+                  'VIGILARTE - Gestor de Proyectos - Desarrollado por Fedor Corzano',
                   style: const pw.TextStyle(color: PdfColors.grey500, fontSize: 8),
                 ),
                 pw.Text(

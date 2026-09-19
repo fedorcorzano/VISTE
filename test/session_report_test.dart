@@ -239,6 +239,22 @@ void main() {
       expect(pdfBytes, isNotNull);
       expect(pdfBytes.length, greaterThan(1000));
     });
+
+    test('ProjectSessionModel validation excludes items and customizes SST responsibles', () {
+      final initialTools = session.getValidatedToolsWithFrequency();
+      expect(initialTools.isNotEmpty, isTrue);
+      final toolToExclude = initialTools.first.name;
+
+      session.excludedTools.add(toolToExclude);
+      final afterExclusion = session.getValidatedToolsWithFrequency();
+      expect(afterExclusion.any((t) => t.name == toolToExclude), isFalse);
+
+      session.customHierarchyResponsibles['eliminacion'] = 'VIGILARTE como parte del servicio';
+      expect(
+        session.getHierarchyResponsible('eliminacion', 'Cliente / Mantenimiento'),
+        'VIGILARTE como parte del servicio',
+      );
+    });
   });
 
   group('CatalogVisualService Tests', () {

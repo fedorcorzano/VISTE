@@ -82,7 +82,7 @@ class InternalReportPdfService {
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
                 pw.Text(
-                  'VIGILARTE Sistema de Gestion de Evidencias - Elaborado por Fedor Corzano',
+                  'VIGILARTE Sistema de Gestion de Evidencias - Desarrollado por Fedor Corzano',
                   style: const pw.TextStyle(color: PdfColors.grey500, fontSize: 8),
                 ),
                 pw.Text(

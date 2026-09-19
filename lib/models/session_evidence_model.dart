@@ -74,6 +74,20 @@ class ProjectSessionModel {
   final ProjectModel project;
   final List<SessionEvidenceRecord> photos;
 
+  /// Conjuntos de exclusión y personalización administrados por el Gestor de Proyectos
+  final Set<String> excludedTools = {};
+  final Set<String> excludedMaterials = {};
+  final Set<String> excludedAccessories = {};
+
+  /// Ítems adicionales ingresados manualmente por el Gestor
+  final List<String> additionalTools = [];
+  final List<String> additionalMaterials = [];
+  final List<String> additionalAccessories = [];
+
+  /// Responsables personalizados de la Jerarquía de Control de Riesgos (ISO 45001 / Ley 29783)
+  /// Claves: 'eliminacion', 'sustitucion', 'ingenieria', 'administracion', 'epp'
+  final Map<String, String> customHierarchyResponsibles = {};
+
   ProjectSessionModel({
     required this.project,
     List<SessionEvidenceRecord>? photos,
@@ -82,6 +96,15 @@ class ProjectSessionModel {
   /// Agrega una evidencia fotográfica a la sesión
   void addPhoto(SessionEvidenceRecord record) {
     photos.add(record);
+  }
+
+  /// Obtiene el responsable de la jerarquía respetando la personalización del Gestor
+  String getHierarchyResponsible(String levelKey, String defaultResponsible) {
+    final custom = customHierarchyResponsibles[levelKey.toLowerCase().trim()];
+    if (custom != null && custom.trim().isNotEmpty) {
+      return custom.trim();
+    }
+    return defaultResponsible;
   }
 
   int get totalPhotos => photos.length;
@@ -183,5 +206,59 @@ class ProjectSessionModel {
       hazards.addAll(photo.peligros);
     }
     return hazards.toList();
+  }
+
+  /// Herramientas validadas por el gestor (excluye las que provee el cliente o ya están en sitio)
+  List<ItemFrequency> getValidatedToolsWithFrequency() {
+    final raw = getToolsWithFrequency();
+    final filtered = raw.where((t) => !excludedTools.contains(t.name)).toList();
+    for (final add in additionalTools) {
+      if (!filtered.any((f) => f.name == add) && !excludedTools.contains(add)) {
+        filtered.add(
+          ItemFrequency(
+            name: add,
+            count: totalPhotos > 0 ? totalPhotos : 1,
+            totalPhotos: totalPhotos > 0 ? totalPhotos : 1,
+            areas: const ['Agregado por Gestor'],
+          ),
+        );
+      }
+    }
+    return filtered;
+  }
+
+  /// Materiales validados por el gestor (excluye los ya existentes en la instalación)
+  List<ItemFrequency> getValidatedMaterialsWithFrequency() {
+    final raw = getMaterialsWithFrequency();
+    final filtered =
+        raw.where((m) => !excludedMaterials.contains(m.name)).toList();
+    for (final add in additionalMaterials) {
+      if (!filtered.any((f) => f.name == add) &&
+          !excludedMaterials.contains(add)) {
+        filtered.add(
+          ItemFrequency(
+            name: add,
+            count: totalPhotos > 0 ? totalPhotos : 1,
+            totalPhotos: totalPhotos > 0 ? totalPhotos : 1,
+            areas: const ['Agregado por Gestor'],
+          ),
+        );
+      }
+    }
+    return filtered;
+  }
+
+  /// Accesorios validados por el gestor (excluye los ya existentes)
+  List<String> getValidatedConsolidatedAccessories() {
+    final raw = getConsolidatedAccessories();
+    final filtered =
+        raw.where((a) => !excludedAccessories.contains(a)).toList();
+    for (final add in additionalAccessories) {
+      if (!filtered.contains(add) && !excludedAccessories.contains(add)) {
+        filtered.add(add);
+      }
+    }
+    filtered.sort();
+    return filtered;
   }
 }

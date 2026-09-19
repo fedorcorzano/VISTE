@@ -98,15 +98,19 @@ class GoogleSheetsService {
 
         final List<String> serverEstructuras = List<String>.from(
           data['Estructuras'] ?? data['estructuras'] ?? [],
-        );
+        ).where((s) => s.trim().isNotEmpty).toList();
         final List<String> serverMateriales = List<String>.from(
           data['Materiales'] ?? data['materiales'] ?? [],
-        );
+        ).where((m) => m.trim().isNotEmpty).toList();
+
+        final List<String> serverProyectos = List<String>.from(
+          data['Proyectos'] ?? data['proyectos'] ?? [],
+        ).where((p) => p.trim().isNotEmpty).toList();
 
         return {
-          'proyectos': List<String>.from(
-            data['Proyectos'] ?? data['proyectos'] ?? [],
-          ),
+          'proyectos': serverProyectos.isNotEmpty
+              ? serverProyectos
+              : TechnicalCatalogMatrix.defaultProyectos,
           'estructuras': serverEstructuras.isNotEmpty
               ? serverEstructuras
               : TechnicalCatalogMatrix.defaultEstructuras,
@@ -134,7 +138,7 @@ class GoogleSheetsService {
 
     // Listas por defecto con los materiales y estructuras oficiales de VISTEC
     return {
-      'proyectos': ['Cámaras de videovigilancia', 'Canalizaciones y Redes', 'General'],
+      'proyectos': TechnicalCatalogMatrix.defaultProyectos,
       'estructuras': TechnicalCatalogMatrix.defaultEstructuras,
       'materiales': TechnicalCatalogMatrix.defaultMateriales,
       'peligros': [

@@ -10,7 +10,7 @@ class WarehouseReportPdfService {
   static Future<Uint8List> generatePdf(ProjectSessionModel session) async {
     final pdf = pw.Document();
 
-    final tools = session.getToolsWithFrequency();
+    final tools = session.getValidatedToolsWithFrequency();
 
     const primaryColor = PdfColor.fromInt(0xFF0F172A); // Slate 900
     const accentColor = PdfColor.fromInt(0xFF0284C7); // Sky 600
@@ -79,7 +79,7 @@ class WarehouseReportPdfService {
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
                 pw.Text(
-                  'VIGILARTE Sistema de Almacén - Elaborado por Fedor Corzano',
+                  'VIGILARTE Sistema de Almacén - Desarrollado por Fedor Corzano',
                   style: const pw.TextStyle(color: PdfColors.grey500, fontSize: 8),
                 ),
                 pw.Text(

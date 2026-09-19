@@ -1,11 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:vector_math/vector_math_64.dart' show Vector3;
@@ -16,6 +18,29 @@ import '../models/session_evidence_model.dart';
 import '../models/sticker_model.dart';
 import '../services/google_sheets_service.dart';
 import 'project_summary_report_screen.dart';
+
+/// Rota la imagen 90° en segundo plano en un Isolate para no bloquear la interfaz (evita ANR y OOM)
+Uint8List? _performRotation(Uint8List bytes) {
+  try {
+    final decoded = img.decodeImage(bytes);
+    if (decoded == null) return null;
+    final rotated = img.copyRotate(decoded, angle: 90);
+    // Si la imagen rotada excede 1920px en alguna dimensión, la reescalamos proporcionalmente
+    img.Image finalImage = rotated;
+    if (rotated.width > 1920 || rotated.height > 1920) {
+      finalImage = img.copyResize(
+        rotated,
+        width: rotated.width > rotated.height ? 1920 : null,
+        height: rotated.height >= rotated.width ? 1920 : null,
+      );
+    }
+    // Usar encodeJpg en lugar de encodePng: 10x más rápido y reduce drásticamente el consumo de RAM
+    return Uint8List.fromList(img.encodeJpg(finalImage, quality: 88));
+  } catch (e) {
+    debugPrint('Error en rotación background: $e');
+    return null;
+  }
+}
 
 // ============================================================================
 // 1. PALETA DE STICKERS DINÁMICOS DESDE EXCEL CON PESTAÑAS Y BUSCADOR
@@ -272,6 +297,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
   bool _cameraError = false;
 
   Uint8List? _capturedImageBytes;
+  double _imageAspectRatio = 9 / 16; // Proporción adaptable horizontal o vertical
   bool _isProcessing = false;
   final List<PlacedSticker> _placedStickers = [];
 
@@ -298,9 +324,57 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
     _sessionModel = ProjectSessionModel(project: widget.project);
     if (widget.initialImageBytes != null) {
       _capturedImageBytes = widget.initialImageBytes;
+      _updateImageAspectRatio(widget.initialImageBytes!);
     }
     _initializeCamera();
     _loadCatalogsFromExcel();
+  }
+
+  Future<void> _updateImageAspectRatio(Uint8List bytes) async {
+    try {
+      final codec = await ui.instantiateImageCodec(bytes);
+      final frame = await codec.getNextFrame();
+      final width = frame.image.width.toDouble();
+      final height = frame.image.height.toDouble();
+      if (height > 0 && width > 0 && mounted) {
+        setState(() {
+          _imageAspectRatio = width / height;
+        });
+        debugPrint('Dimensiones de foto calculadas: $width x $height (Ratio: $_imageAspectRatio)');
+      }
+    } catch (e) {
+      debugPrint('Error al calcular relación de aspecto de la foto: $e');
+    }
+  }
+
+  /// Rotar la foto capturada 90° en sentido horario para relevamiento panorámico horizontal
+  Future<void> _rotateCapturedImage() async {
+    if (_capturedImageBytes == null) return;
+    setState(() => _isProcessing = true);
+    try {
+      final newBytes = await compute(_performRotation, _capturedImageBytes!);
+      if (newBytes != null && mounted) {
+        setState(() {
+          _capturedImageBytes = newBytes;
+          _placedStickers.clear();
+          _resetZoom();
+        });
+        await _updateImageAspectRatio(newBytes);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Foto rotada 90°. Encuadre panorámico ajustado.'),
+              backgroundColor: Color(0xFF38BDF8),
+              duration: Duration(seconds: 1),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Error rotando imagen: $e');
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
+    }
   }
 
   Future<void> _loadCatalogsFromExcel() async {
@@ -327,7 +401,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
 
         _cameraController = CameraController(
           backCamera,
-          ResolutionPreset.max, // Máxima resolución posible del sensor fotográfico
+          ResolutionPreset.veryHigh, // 1080p Full HD óptimo, sin fugas ni saturación de memoria
           enableAudio: false,
         );
 
@@ -384,6 +458,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
       setState(() {
         _capturedImageBytes = bytes;
       });
+      _updateImageAspectRatio(bytes);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -400,7 +475,9 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
     try {
       final XFile? image = await _imagePicker.pickImage(
         source: ImageSource.gallery,
-        imageQuality: 100, // Calidad máxima original sin compresión
+        maxWidth: 1280,
+        maxHeight: 1280,
+        imageQuality: 85,
       );
       if (image != null) {
         final bytes = await image.readAsBytes();
@@ -409,6 +486,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
           _placedStickers.clear();
           _resetZoom();
         });
+        _updateImageAspectRatio(bytes);
       }
     } catch (e) {
       if (mounted) {
@@ -557,7 +635,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                   const SizedBox(width: 10),
                   const Expanded(
                     child: Text(
-                      'Kit Técnico Deducido (VISTEC V2)',
+                      'Kit Técnico Deducido',
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 17,
@@ -702,23 +780,24 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
       return;
     }
 
-    // Esperar si la altura estuviese comprimida momentáneamente
+    // Esperar si la dimensión estuviese comprimida momentáneamente
     int retries = 0;
-    while (boundary.size.height < 500 && retries < 10) {
+    while (boundary.size.shortestSide < 100 && retries < 10) {
       await Future.delayed(const Duration(milliseconds: 50));
       retries++;
     }
     if (!mounted) return;
 
-    // Calcular escala exacta para garantizar siempre la resolución completa de 1549 x 2560
-    final double targetRatio = (boundary.size.height > 0)
-        ? (2560.0 / boundary.size.height)
-        : 4.2;
+    // Calcular escala optimizada HD (~1280 px) para sincronización ultra-rápida y reportes livianos
+    final double maxDimension = math.max(boundary.size.width, boundary.size.height);
+    final double targetRatio = (maxDimension > 0)
+        ? (1280.0 / maxDimension).clamp(1.0, 2.0)
+        : 1.5;
 
     Uint8List pngBytes;
     Uint8List clientPngBytes;
     try {
-      // 2.1 Imagen completa para Gestor de Proyectos (todos los pines y metadata)
+      // 2.1 Imagen completa para Gestor de Proyectos (todos los pines y metadata en formato liviano)
       ui.Image image = await boundary.toImage(pixelRatio: targetRatio);
       ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       if (byteData == null) {
@@ -726,9 +805,9 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
       }
       pngBytes = byteData.buffer.asUint8List();
       clientPngBytes = pngBytes; // Por defecto
-      debugPrint('Imagen capturada con resolución garantizada: ${image.width} x ${image.height}');
+      debugPrint('Imagen optimizada capturada: ${image.width} x ${image.height} (${(pngBytes.lengthInBytes / 1024).toStringAsFixed(1)} KB)');
 
-      // 2.2 Imagen exclusiva para Cliente (SOLO marcadores de seguridad SST, sin herramientas ni materiales)
+      // 2.2 Imagen exclusiva para Cliente (SOLO marcadores de seguridad SST)
       final allStickersBackup = List<PlacedSticker>.from(_placedStickers);
       final hasNonSafety = _placedStickers.any((s) => s.sticker.category != StickerCategory.peligros);
       if (hasNonSafety) {
@@ -882,7 +961,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
           .trim();
       final String timestamp =
           DateTime.now().toIso8601String().replaceAll(RegExp(r'[^0-9]'), '');
-      final String localFileName = 'VISTEC_${cleanContact}_Foto${_sessionPhotoNumber}_${cleanArea}_$timestamp.png';
+      final String localFileName = 'VISTE_${cleanContact}_Foto${_sessionPhotoNumber}_${cleanArea}_$timestamp.png';
       final File localFile = File('${designatedFolder.path}/$localFileName');
       await localFile.writeAsBytes(pngBytes);
       final String localFilePath = localFile.path;
@@ -1201,7 +1280,12 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
             tooltip: 'Cargar foto de la memoria / galería',
             onPressed: _pickFromGallery,
           ),
-          if (_capturedImageBytes != null)
+          if (_capturedImageBytes != null) ...[
+            IconButton(
+              icon: const Icon(Icons.rotate_right_rounded, color: Color(0xFF38BDF8)),
+              tooltip: 'Rotar foto 90° (Panorámica / Horizontal)',
+              onPressed: _isProcessing ? null : _rotateCapturedImage,
+            ),
             IconButton(
               icon: const Icon(Icons.refresh, color: Colors.amberAccent),
               tooltip: 'Tomar otra foto con la cámara',
@@ -1213,6 +1297,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                 });
               },
             ),
+          ],
         ],
       ),
       body: _capturedImageBytes == null
@@ -1391,101 +1476,111 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                     maxScale: 6.0,
                     panEnabled: true,
                     scaleEnabled: true,
-                    child: RepaintBoundary(
-                      key: _repaintBoundaryKey,
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTapUp: (details) {
-                          // Centrar el pin en el punto exacto del toque
-                          final Offset tapPosition = Offset(
-                            details.localPosition.dx,
-                            details.localPosition.dy,
-                          );
-                          _openStickerSelector(
-                            title: 'Añadir Pin #${_placedStickers.length + 1}',
-                            initialPosition: tapPosition,
-                          );
-                        },
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            Image.memory(_capturedImageBytes!, fit: BoxFit.cover),
+                    child: Center(
+                      child: AspectRatio(
+                        aspectRatio: _imageAspectRatio,
+                        child: RepaintBoundary(
+                          key: _repaintBoundaryKey,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTapUp: (details) {
+                              // Centrar el pin en el punto exacto del toque
+                              final Offset tapPosition = Offset(
+                                details.localPosition.dx,
+                                details.localPosition.dy,
+                              );
+                              _openStickerSelector(
+                                title: 'Añadir Pin #${_placedStickers.length + 1}',
+                                initialPosition: tapPosition,
+                              );
+                            },
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                Image.memory(_capturedImageBytes!, fit: BoxFit.fill),
 
-                            // Marca de agua técnica compacta
-                            Positioned(
-                              top: 10,
-                              left: 10,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withValues(alpha: 0.70),
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(
-                                    color: const Color(0xFF38BDF8),
-                                    width: 0.8,
-                                  ),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
+                                // Marca de agua técnica ultra-compacta (mínima altura y fuentes pequeñas)
+                                Positioned(
+                                  top: 6,
+                                  left: 6,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 5,
+                                      vertical: 2.5,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withValues(alpha: 0.75),
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(
+                                        color: const Color(0xFF38BDF8).withValues(alpha: 0.7),
+                                        width: 0.6,
+                                      ),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        const Icon(
-                                          Icons.verified_user,
-                                          color: Color(0xFF38BDF8),
-                                          size: 12,
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const Icon(
+                                              Icons.verified,
+                                              color: Color(0xFF38BDF8),
+                                              size: 8,
+                                            ),
+                                            const SizedBox(width: 3),
+                                            Text(
+                                              'VISTE • ${widget.project.proyecto.toUpperCase()} • FOTO #$_sessionPhotoNumber',
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 7.5,
+                                                fontWeight: FontWeight.bold,
+                                                height: 1.0,
+                                              ),
+                                            ),
+                                          ],
                                         ),
-                                        const SizedBox(width: 4),
+                                        const SizedBox(height: 1),
                                         Text(
-                                          'VISTEC • ${widget.project.proyecto.toUpperCase()} • FOTO #$_sessionPhotoNumber',
+                                          '${widget.project.contacto} | ${widget.project.fecha}',
                                           style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 9.5,
-                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white70,
+                                            fontSize: 6.5,
+                                            height: 1.0,
                                           ),
                                         ),
+                                        if (widget.project.mapa.isNotEmpty && widget.project.mapa != '0.0, 0.0') ...[
+                                          const SizedBox(height: 0.5),
+                                          Text(
+                                            'GPS: ${widget.project.mapa}',
+                                            style: const TextStyle(
+                                              color: Color(0xFF38BDF8),
+                                              fontSize: 6.5,
+                                              fontWeight: FontWeight.w500,
+                                              height: 1.0,
+                                            ),
+                                          ),
+                                        ],
                                       ],
                                     ),
-                                    const SizedBox(height: 1),
-                                    Text(
-                                      'Contacto: ${widget.project.contacto} | ${widget.project.fecha}',
-                                      style: const TextStyle(
-                                        color: Colors.white70,
-                                        fontSize: 8.5,
-                                      ),
-                                    ),
-                                    if (widget.project.mapa.isNotEmpty && widget.project.mapa != '0.0, 0.0') ...[
-                                      const SizedBox(height: 1),
-                                      Text(
-                                        'GPS: ${widget.project.mapa}',
-                                        style: const TextStyle(
-                                          color: Color(0xFF38BDF8),
-                                          fontSize: 8,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ],
-                                  ],
+                                  ),
                                 ),
-                              ),
+
+                                // Pines numerados colocados arrastrables (sin leyenda superpuesta dentro de la foto)
+                                for (int i = 0; i < _placedStickers.length; i++)
+                                  _buildNumberedPin(_placedStickers[i], i),
+
+                                // Leyenda técnica ultra-compacta y translúcida al pie de la imagen
+                                if (_placedStickers.isNotEmpty)
+                                  Positioned(
+                                    bottom: 5,
+                                    left: 5,
+                                    right: 5,
+                                    child: _buildInPhotoTranslucentLegend(),
+                                  ),
+                              ],
                             ),
-
-                            // Pines numerados colocados arrastrables
-                            for (int i = 0; i < _placedStickers.length; i++)
-                              _buildNumberedPin(_placedStickers[i], i),
-
-                            // Leyenda técnica al pie de la imagen (dentro del encuadre fotográfico)
-                            if (_placedStickers.isNotEmpty)
-                              Positioned(
-                                bottom: 8,
-                                left: 8,
-                                right: 8,
-                                child: _buildTechnicalLegend(),
-                              ),
-                          ],
+                          ),
                         ),
                       ),
                     ),
@@ -1634,20 +1729,190 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
   Color _getCategoryColor(StickerCategory category) {
     switch (category) {
       case StickerCategory.estructuras:
-        return const Color(0xFF0284C7); // Azul intenso
+        return const Color(0xFF00B0FF); // Azul eléctrico ultra-vibrante
       case StickerCategory.materiales:
-        return const Color(0xFF16A34A); // Verde esmeralda
+        return const Color(0xFF00E676); // Verde neón ultra-vibrante
       case StickerCategory.peligros:
-        return const Color(0xFFEA580C); // Naranja / Ámbar
+        return const Color(0xFFFFD600); // Amarillo seguridad eléctrico y vibrante
+    }
+  }
+
+  /// Construye el distintivo visual del Pin según su categoría y forma geométrica (Norma ISO 7010 / OSHA)
+  /// Con lente HUD completamente translúcido (sin sombras que oscurezcan) para observar claramente las estructuras debajo.
+  Widget _buildPinBadge(StickerCategory category, int number) {
+    switch (category) {
+      case StickerCategory.peligros:
+        // ▲ TRIÁNGULO AMARILLO DE ADVERTENCIA VIBRANTE (Lente translúcido de alta visibilidad)
+        return SizedBox(
+          width: 18,
+          height: 16,
+          child: CustomPaint(
+            painter: WarningTrianglePainter(
+              fillColor: const Color(0x35FFD600), // ~20% de opacidad: se ve completamente la estructura detrás
+              borderColor: const Color(0xFFFFD600), // Borde amarillo eléctrico de máxima visibilidad
+              borderWidth: 1.3,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.only(top: 3.5),
+              child: Center(
+                child: Text(
+                  '$number',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 8.0,
+                    height: 1.0,
+                    shadows: [
+                      Shadow(color: Colors.black, blurRadius: 2.5),
+                      Shadow(color: Colors.black, blurRadius: 4.0),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+
+      case StickerCategory.estructuras:
+        // ■ CUADRADO AZUL TÉCNICO VIBRANTE (Lente translúcido cristalino)
+        return Container(
+          width: 14,
+          height: 14,
+          decoration: BoxDecoration(
+            color: const Color(0x3000B0FF), // ~19% de opacidad: cristalino sin fondo opaco
+            borderRadius: BorderRadius.circular(2.5),
+            border: Border.all(
+              color: const Color(0xFF00B0FF), // Borde azul eléctrico de alto impacto
+              width: 1.3,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              '$number',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 7.5,
+                height: 1.0,
+                shadows: [
+                  Shadow(color: Colors.black, blurRadius: 2.5),
+                  Shadow(color: Colors.black, blurRadius: 4.0),
+                ],
+              ),
+            ),
+          ),
+        );
+
+      case StickerCategory.materiales:
+        // ● CÍRCULO VERDE NEÓN VIBRANTE (Lente translúcido cristalino)
+        return Container(
+          width: 14,
+          height: 14,
+          decoration: BoxDecoration(
+            color: const Color(0x3000E676), // ~19% de opacidad: cristalino sin fondo opaco
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: const Color(0xFF00E676), // Borde verde neón ultra-vibrante
+              width: 1.3,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              '$number',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 7.5,
+                height: 1.0,
+                shadows: [
+                  Shadow(color: Colors.black, blurRadius: 2.5),
+                  Shadow(color: Colors.black, blurRadius: 4.0),
+                ],
+              ),
+            ),
+          ),
+        );
+    }
+  }
+
+  /// Distintivo ampliado para la ventana modal de opciones del Pin
+  Widget _buildModalPinBadge(StickerCategory category, int number) {
+    switch (category) {
+      case StickerCategory.peligros:
+        return SizedBox(
+          width: 44,
+          height: 40,
+          child: CustomPaint(
+            painter: WarningTrianglePainter(
+              fillColor: const Color(0xFFFFD600),
+              borderColor: Colors.black,
+              borderWidth: 2.2,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Center(
+                child: Text(
+                  '$number',
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 18,
+                    height: 1.0,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+
+      case StickerCategory.estructuras:
+        return Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: const Color(0xFF00B0FF),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.white, width: 2.5),
+          ),
+          child: Center(
+            child: Text(
+              '$number',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+                height: 1.0,
+              ),
+            ),
+          ),
+        );
+
+      case StickerCategory.materiales:
+        return Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: const Color(0xFF00E676),
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 2.5),
+          ),
+          child: Center(
+            child: Text(
+              '$number',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+                height: 1.0,
+              ),
+            ),
+          ),
+        );
     }
   }
 
   Widget _buildNumberedPin(PlacedSticker placed, int index) {
-    final Color categoryColor = _getCategoryColor(placed.sticker.category);
-
-    // Hitbox táctil invisible de 36x36 px para tocar/arrastrar con total facilidad,
-    // con diseño de Lente Translúcido HUD (16 px): tinte de categoría al 38% que permite
-    // ver claramente la estructura y textura detrás, y borde sólido de 1.8 px con número nítido.
+    // Zona táctil invisible de 36x36 px para tocar y arrastrar con máxima soltura sobre la pantalla táctil
     return Positioned(
       left: placed.position.dx - 18,
       top: placed.position.dy - 18,
@@ -1668,34 +1933,8 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
           width: 36,
           height: 36,
           alignment: Alignment.center,
-          color: Colors.transparent, // Zona táctil invisible cómoda para el dedo
-          child: Container(
-            width: 16,
-            height: 16,
-            decoration: BoxDecoration(
-              color: categoryColor.withValues(alpha: 0.42), // Lente tintado translúcido
-              shape: BoxShape.circle,
-              border: Border.all(color: categoryColor, width: 0.8), // Grosor reducido en 1 px (0.8 px)
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.60),
-                  blurRadius: 1.5,
-                  spreadRadius: 0.2,
-                ),
-              ],
-            ),
-            child: Center(
-              child: Text(
-                '${index + 1}',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 8.5,
-                  // Sin sombras artificiales para evitar bordes/líneas dobles al hacer zoom
-                ),
-              ),
-            ),
-          ),
+          color: Colors.transparent, // Zona táctil de comodidad sin bordes rígidos
+          child: _buildPinBadge(placed.sticker.category, index + 1),
         ),
       ),
     );
@@ -1707,7 +1946,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
         ? 'Estructura'
         : (placed.sticker.category == StickerCategory.materiales
             ? 'Material'
-            : 'Peligro');
+            : 'Peligro SST');
 
     showModalBottomSheet(
       context: context,
@@ -1737,25 +1976,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
               ),
               Row(
                 children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: categoryColor,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 2.5),
-                    ),
-                    child: Center(
-                      child: Text(
-                        '${index + 1}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                        ),
-                      ),
-                    ),
-                  ),
+                  _buildModalPinBadge(placed.sticker.category, index + 1),
                   const SizedBox(width: 14),
                   Expanded(
                     child: Column(
@@ -1846,15 +2067,32 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
     );
   }
 
-  Widget _buildTechnicalLegend() {
+  /// Panel de Leyenda Ultra-Compacta y Translúcida dentro de la foto
+  /// Diseñada con mínima altura, separación reducida y fondo al 48% para no obstruir las estructuras
+  Widget _buildInPhotoTranslucentLegend() {
+    final List<MapEntry<int, PlacedSticker>> sstPins = [];
+    final List<MapEntry<int, PlacedSticker>> matPins = [];
+    final List<MapEntry<int, PlacedSticker>> structPins = [];
+
+    for (int i = 0; i < _placedStickers.length; i++) {
+      final s = _placedStickers[i];
+      if (s.sticker.category == StickerCategory.peligros) {
+        sstPins.add(MapEntry(i, s));
+      } else if (s.sticker.category == StickerCategory.materiales) {
+        matPins.add(MapEntry(i, s));
+      } else {
+        structPins.add(MapEntry(i, s));
+      }
+    }
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2.5),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.75),
-        borderRadius: BorderRadius.circular(8),
+        color: Colors.black.withValues(alpha: 0.48), // Fondo translúcido para visibilidad
+        borderRadius: BorderRadius.circular(5),
         border: Border.all(
-          color: const Color(0xFF38BDF8).withValues(alpha: 0.7),
-          width: 0.8,
+          color: Colors.white.withValues(alpha: 0.22),
+          width: 0.5,
         ),
       ),
       child: Column(
@@ -1863,77 +2101,224 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
         children: [
           Row(
             children: [
-              const Icon(Icons.list_alt, color: Color(0xFF38BDF8), size: 12),
-              const SizedBox(width: 4),
+              const Icon(Icons.format_list_bulleted, color: Color(0xFF38BDF8), size: 9),
+              const SizedBox(width: 3),
               Text(
-                'LEYENDA (${_placedStickers.length})',
+                'PINES RELEVADOS (${_placedStickers.length})',
                 style: const TextStyle(
                   color: Color(0xFF38BDF8),
-                  fontSize: 9,
+                  fontSize: 7.0,
                   fontWeight: FontWeight.bold,
-                  letterSpacing: 0.5,
+                  letterSpacing: 0.3,
+                  height: 1.0,
                 ),
               ),
               const Spacer(),
               const Text(
-                'Elaborado por Fedor Corzano',
+                'Desarrollado por: Fedor Corzano',
                 style: TextStyle(
-                  color: Colors.white38,
-                  fontSize: 8.5,
+                  color: Colors.white54,
+                  fontSize: 6.0,
                   fontStyle: FontStyle.italic,
+                  height: 1.0,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 5),
-          Wrap(
-            spacing: 12,
-            runSpacing: 4,
-            children: List.generate(_placedStickers.length, (i) {
-              final s = _placedStickers[i];
-              final color = _getCategoryColor(s.sticker.category);
-              return GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => _showPinOptionsModal(s, i),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 13,
-                      height: 13,
-                      decoration: BoxDecoration(
-                        color: color,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Center(
-                        child: Text(
-                          '${i + 1}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 8.5,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      s.sticker.title,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }),
-          ),
+          const SizedBox(height: 2),
+
+          // 1. Peligros / SST (▲ Triángulos Amarillos)
+          if (sstPins.isNotEmpty) ...[
+            _buildInPhotoCategoryChipsRow(
+              categoryColor: const Color(0xFFFFD600),
+              pins: sstPins,
+            ),
+          ],
+
+          // 2. Materiales (● Círculos Verdes)
+          if (matPins.isNotEmpty) ...[
+            if (sstPins.isNotEmpty) const SizedBox(height: 1.2),
+            _buildInPhotoCategoryChipsRow(
+              categoryColor: const Color(0xFF00E676),
+              pins: matPins,
+            ),
+          ],
+
+          // 3. Estructuras (■ Cuadrados Azules)
+          if (structPins.isNotEmpty) ...[
+            if (sstPins.isNotEmpty || matPins.isNotEmpty) const SizedBox(height: 1.2),
+            _buildInPhotoCategoryChipsRow(
+              categoryColor: const Color(0xFF00B0FF),
+              pins: structPins,
+            ),
+          ],
         ],
       ),
     );
   }
+
+  Widget _buildInPhotoCategoryChipsRow({
+    required Color categoryColor,
+    required List<MapEntry<int, PlacedSticker>> pins,
+  }) {
+    return Wrap(
+      spacing: 6,
+      runSpacing: 1.5,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: pins.map((entry) {
+        final int index = entry.key;
+        final PlacedSticker placed = entry.value;
+        return InkWell(
+          onTap: () => _showPinOptionsModal(placed, index),
+          borderRadius: BorderRadius.circular(3),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2.5, vertical: 1.0),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildMiniLegendBadge(placed.sticker.category, index + 1),
+                const SizedBox(width: 3.5),
+                Text(
+                  placed.sticker.title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 7.5,
+                    fontWeight: FontWeight.w600,
+                    height: 1.0,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  /// Distintivo miniatura ultra-compacto para la leyenda al pie de la foto
+  Widget _buildMiniLegendBadge(StickerCategory category, int number) {
+    switch (category) {
+      case StickerCategory.peligros:
+        return SizedBox(
+          width: 12,
+          height: 11,
+          child: CustomPaint(
+            painter: WarningTrianglePainter(
+              fillColor: const Color(0xFFFFD600),
+              borderColor: Colors.black,
+              borderWidth: 0.8,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.only(top: 2.2),
+              child: Center(
+                child: Text(
+                  '$number',
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 5.5,
+                    height: 1.0,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+
+      case StickerCategory.estructuras:
+        return Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+            color: const Color(0xFF00B0FF),
+            borderRadius: BorderRadius.circular(2),
+            border: Border.all(
+              color: Colors.white,
+              width: 0.6,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              '$number',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 5.5,
+                height: 1.0,
+              ),
+            ),
+          ),
+        );
+
+      case StickerCategory.materiales:
+        return Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+            color: const Color(0xFF00E676),
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: Colors.white,
+              width: 0.6,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              '$number',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 5.5,
+                height: 1.0,
+              ),
+            ),
+          ),
+        );
+    }
+  }
+}
+
+/// Pintor geométrico del Triángulo Amarillo de Advertencia (Norma ISO 7010 / OSHA)
+class WarningTrianglePainter extends CustomPainter {
+  final Color fillColor;
+  final Color borderColor;
+  final double borderWidth;
+
+  WarningTrianglePainter({
+    required this.fillColor,
+    required this.borderColor,
+    this.borderWidth = 1.0,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = Path();
+    final double w = size.width;
+    final double h = size.height;
+
+    // Vértice superior centrado en (w/2, 0)
+    path.moveTo(w / 2, 0);
+    path.lineTo(w, h);
+    path.lineTo(0, h);
+    path.close();
+
+    // Relleno de seguridad (100% traslúcido sin sombra que oscurezca)
+    final fillPaint = Paint()
+      ..color = fillColor
+      ..style = PaintingStyle.fill;
+    canvas.drawPath(path, fillPaint);
+
+    // Borde de alerta
+    final borderPaint = Paint()
+      ..color = borderColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = borderWidth
+      ..strokeJoin = StrokeJoin.round;
+    canvas.drawPath(path, borderPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 // Pintor de cuadrícula para composición fotográfica

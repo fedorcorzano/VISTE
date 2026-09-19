@@ -92,6 +92,21 @@ class TechnicalCatalogMatrix {
     'Acero Inoxidable',
     'Policarbonato',
     'Teja',
+    'Madera',
+  ];
+
+  // Lista oficial de servicios y tipos de proyectos de VIGILARTE
+  static const List<String> defaultProyectos = [
+    'Cámaras de videovigilancia (CCTV)',
+    'Control de Accesos y Asistencia',
+    'Alarmas Contra Incendio (Detección)',
+    'Alarmas Contra Intrusión',
+    'Cableado Estructurado y Redes',
+    'Fibra Óptica y Enlaces Inalámbricos',
+    'Canalizaciones Eléctricas y Tableros',
+    'Mantenimiento Preventivo / Correctivo',
+    'Inspección de Seguridad SST',
+    'General',
   ];
 
   /// Formatea cadenas a formato tipo título preservando siglas técnicas (PVC, EMT, IMC, etc.)
@@ -324,6 +339,13 @@ class TechnicalCatalogMatrix {
       'Taladro con brocas para cerámica / teja',
       'Cincel fino manual',
       'Pistola de calafateo para sellador poliuretano',
+    ],
+    'MADERA': [
+      'Taladro con brocas para madera / Brocas paleta',
+      'Atornillador inalámbrico con puntas Phillips/Torx',
+      'Sierra de calar / Serrucho de mano',
+      'Escuadra y cinta métrica',
+      'Cincel de madera / Formón',
     ],
   };
 

@@ -182,7 +182,7 @@ class ClientReportPdfService {
                         style: const pw.TextStyle(color: PdfColors.grey600, fontSize: 7.5),
                       ),
                       pw.Text(
-                        'Elaborado por Fedor Corzano',
+                        'Desarrollado por Fedor Corzano',
                         style: pw.TextStyle(
                           color: const PdfColor.fromInt(0xFF0F172A),
                           fontSize: 7.5,
@@ -266,7 +266,7 @@ class ClientReportPdfService {
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
                 pw.Text(
-                  'VIGILARTE - Entregable al Cliente - Elaborado por Fedor Corzano',
+                  'VIGILARTE - Entregable al Cliente - Desarrollado por Fedor Corzano',
                   style: const pw.TextStyle(color: PdfColors.grey500, fontSize: 8),
                 ),
                 pw.Text(
@@ -634,7 +634,7 @@ class ClientReportPdfService {
                 pw.SizedBox(height: 4),
 
                 // Tabla con los campos solicitados: Jerarquía | Medida de Control Preventivo | Responsable
-                _buildHierarchyControlsTable(photo.peligros, primaryColor, borderGray, lightBg),
+                _buildHierarchyControlsTable(photo.peligros, primaryColor, borderGray, lightBg, session),
               ],
             );
           },
@@ -674,6 +674,7 @@ class ClientReportPdfService {
     PdfColor primaryColor,
     PdfColor borderGray,
     PdfColor lightBg,
+    ProjectSessionModel session,
   ) {
     final text = hazards.join(' ').toLowerCase();
 
@@ -687,6 +688,7 @@ class ClientReportPdfService {
       elim = 'Planificar pre-armado y ensambles a nivel de piso para minimizar el tiempo de exposicion en altura.';
       elimResp = 'Supervisor SST / VIGILARTE';
     }
+    elimResp = session.getHierarchyResponsible('eliminacion', elimResp);
 
     // 2. Sustitución
     String sust = 'Sustituir herramientas manuales convencionales por herramientas con aislamiento certificado.';
@@ -695,6 +697,7 @@ class ClientReportPdfService {
       sust = 'Sustituir escaleras portatiles de mano por andamios modulares normados o plataforma elevadora tipo tijera.';
       sustResp = 'VIGILARTE / Contratista';
     }
+    sustResp = session.getHierarchyResponsible('sustitucion', sustResp);
 
     // 3. Ingeniería
     String ing = 'Instalacion de delimitacion fisica rigida y protecciones en puntos de paso o trabajo.';
@@ -706,6 +709,7 @@ class ClientReportPdfService {
       ing = 'Colocacion de mantas dielectricas y aislamiento fisico en canalizaciones o tableros adyacentes.';
       ingResp = 'Cliente / VIGILARTE';
     }
+    ingResp = session.getHierarchyResponsible('ingenieria', ingResp);
 
     // 4. Administración
     String adm = 'Difusion de IPERC Continuo, AST diario, charla de seguridad de 5 minutos y senalizacion perimetral.';
@@ -714,6 +718,7 @@ class ClientReportPdfService {
       adm = 'Emision obligatoria de PETAR para Trabajos en Altura, check-list de arnes e inspeccion previa del area.';
       admResp = 'Supervisor SST VIGILARTE';
     }
+    admResp = session.getHierarchyResponsible('administracion', admResp);
 
     // 5. EPP
     String epp = 'Casco de seguridad con barbiquejo, lentes con proteccion lateral, guantes anticorte y calzado dielectrico.';
@@ -725,6 +730,7 @@ class ClientReportPdfService {
       epp = 'Guantes dielectricos normados clase 00/0, careta facial contra arco electrico y calzado de seguridad dielectrico.';
       eppResp = 'Personal Tecnico Instalador';
     }
+    eppResp = session.getHierarchyResponsible('epp', eppResp);
 
     final rows = [
       ('Eliminacion', elim, elimResp, const PdfColor.fromInt(0xFF16A34A)),
@@ -836,18 +842,19 @@ class ClientReportPdfService {
     return null;
   }
 
-  /// Descarga imagen satelital ArcGIS World Imagery centrada en el proyecto
+  /// Descarga imagen satelital ArcGIS World Imagery centrada en el proyecto en formato ancho panorámico
   static Future<Uint8List?> _fetchSatelliteMap(double lat, double lng) async {
     try {
-      const delta = 0.0035; // Nivel de zoom aproximado 17-18
-      final minLon = lng - delta;
-      final maxLon = lng + delta;
-      final minLat = lat - delta;
-      final maxLat = lat + delta;
+      const deltaLon = 0.0060; // Zoom horizontal amplio
+      const deltaLat = 0.0028; // Zoom vertical proporcional
+      final minLon = lng - deltaLon;
+      final maxLon = lng + deltaLon;
+      final minLat = lat - deltaLat;
+      final maxLat = lat + deltaLat;
 
       final url =
           'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export'
-          '?bbox=$minLon,$minLat,$maxLon,$maxLat&bboxSR=4326&imageSR=4326&size=600,600&format=jpg&f=image';
+          '?bbox=$minLon,$minLat,$maxLon,$maxLat&bboxSR=4326&imageSR=4326&size=800,380&format=jpg&f=image';
 
       final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 5));
       if (response.statusCode == 200 && response.bodyBytes.length > 1000) {
@@ -962,21 +969,22 @@ class ClientReportPdfService {
     );
   }
 
-  /// Mapa cuadrado satelital con marcador de posición (pin) centrado
+  /// Mapa panorámico satelital con marcador de posición (pin) centrado y ancho completo A4
   static pw.Widget _buildSatelliteMapWidget({
     required Uint8List? satelliteBytes,
     required double? lat,
     required double? lng,
   }) {
-    const double mapSize = 210.0;
+    const double mapWidth = 475.0;
+    const double mapHeight = 240.0;
     const markerColor = PdfColor.fromInt(0xFFEF4444); // Red 500
 
     return pw.ClipRRect(
       horizontalRadius: 8,
       verticalRadius: 8,
       child: pw.Container(
-        width: mapSize,
-        height: mapSize,
+        width: mapWidth,
+        height: mapHeight,
         decoration: pw.BoxDecoration(
           color: const PdfColor.fromInt(0xFF0F172A),
           border: pw.Border.all(color: const PdfColor.fromInt(0xFF0284C7), width: 1.5),
@@ -989,8 +997,8 @@ class ClientReportPdfService {
             pw.Image(
               pw.MemoryImage(satelliteBytes),
               fit: pw.BoxFit.cover,
-              width: mapSize,
-              height: mapSize,
+              width: mapWidth,
+              height: mapHeight,
             )
           else
             _buildVectorMapPlaceholder(lat, lng),

@@ -10,8 +10,8 @@ class PurchasingReportPdfService {
   static Future<Uint8List> generatePdf(ProjectSessionModel session) async {
     final pdf = pw.Document();
 
-    final materials = session.getMaterialsWithFrequency();
-    final accessories = session.getConsolidatedAccessories();
+    final materials = session.getValidatedMaterialsWithFrequency();
+    final accessories = session.getValidatedConsolidatedAccessories();
 
     const primaryColor = PdfColor.fromInt(0xFF0F172A); // Slate 900
     const accentColor = PdfColor.fromInt(0xFF0284C7); // Sky 600
@@ -79,7 +79,7 @@ class PurchasingReportPdfService {
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
                 pw.Text(
-                  'VIGILARTE Sistema de Compras - Elaborado por Fedor Corzano',
+                  'VIGILARTE Sistema de Compras - Desarrollado por Fedor Corzano',
                   style: const pw.TextStyle(color: PdfColors.grey500, fontSize: 8),
                 ),
                 pw.Text(

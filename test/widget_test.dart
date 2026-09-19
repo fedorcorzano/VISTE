@@ -15,8 +15,8 @@ void main() {
     await tester.pumpWidget(const VistecApp());
 
     // Verify that the title and form fields are present.
-    expect(find.text('VISTEC • Control de Peligros'), findsOneWidget);
-    expect(find.text('Paso 1: Datos de Inspección'), findsOneWidget);
+    expect(find.text('VISTE • Relevamiento de Información'), findsOneWidget);
+    expect(find.text('Paso 1: Relevamiento de Información'), findsOneWidget);
     expect(find.text('Iniciar Sesión de Fotos (Proyecto) 📸'), findsOneWidget);
   });
 
