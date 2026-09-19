@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:typed_data';
 import 'project_model.dart';
 
@@ -67,6 +68,58 @@ class SessionEvidenceRecord {
 
   /// Retorna la imagen adecuada para el cliente (con solo marcadores SST) o fallback a la completa
   Uint8List get clientImageBytes => clientPngBytes ?? pngBytes;
+
+  Map<String, dynamic> toJson() {
+    return {
+      'photoNumber': photoNumber,
+      'areaSector': areaSector,
+      'localImagePath': localImagePath,
+      'estructuras': estructuras,
+      'materiales': materiales,
+      'peligros': peligros,
+      'herramientas': herramientas,
+      'accesorios': accesorios,
+      'timestamp': timestamp.toIso8601String(),
+    };
+  }
+
+  factory SessionEvidenceRecord.fromJson(Map<String, dynamic> json) {
+    final String imagePath = json['localImagePath'] as String? ?? '';
+    Uint8List loadedBytes = Uint8List(0);
+    Uint8List? loadedClientBytes;
+
+    if (imagePath.isNotEmpty) {
+      final file = File(imagePath);
+      if (file.existsSync()) {
+        try {
+          loadedBytes = file.readAsBytesSync();
+        } catch (_) {}
+      }
+      final sstPath = imagePath.replaceAll('.png', '_sst.png');
+      final sstFile = File(sstPath);
+      if (sstFile.existsSync()) {
+        try {
+          loadedClientBytes = sstFile.readAsBytesSync();
+        } catch (_) {}
+      }
+    }
+
+    return SessionEvidenceRecord(
+      photoNumber: json['photoNumber'] as int? ?? 1,
+      areaSector: json['areaSector'] as String? ?? '',
+      localImagePath: imagePath,
+      pngBytes: loadedBytes,
+      clientPngBytes: loadedClientBytes,
+      estructuras: (json['estructuras'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
+      materiales: (json['materiales'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
+      peligros: (json['peligros'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
+      herramientas: (json['herramientas'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
+      accesorios: (json['accesorios'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
+      timestamp: json['timestamp'] != null
+          ? DateTime.tryParse(json['timestamp'] as String) ?? DateTime.now()
+          : DateTime.now(),
+    );
+  }
 }
 
 /// Contenedor integral de la sesión de trabajo con métodos de consolidación y métricas
@@ -260,5 +313,70 @@ class ProjectSessionModel {
     }
     filtered.sort();
     return filtered;
+  }
+
+  /// Identificador único y seguro para nombre de archivo en almacenamiento local
+  String get id {
+    final raw = '${project.contacto}_${project.proyecto}_${project.fecha}';
+    final sanitized = raw.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_').replaceAll(RegExp(r'_+'), '_');
+    return sanitized.isEmpty ? 'proyecto_${DateTime.now().millisecondsSinceEpoch}' : sanitized;
+  }
+
+  /// Fecha legible formateada para el listado de proyectos
+  String get displayDate => project.fecha.isNotEmpty ? project.fecha : 'Sin fecha';
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'project': project.toStorageMap(),
+      'photos': photos.map((p) => p.toJson()).toList(),
+      'excludedTools': excludedTools.toList(),
+      'excludedMaterials': excludedMaterials.toList(),
+      'excludedAccessories': excludedAccessories.toList(),
+      'additionalTools': additionalTools,
+      'additionalMaterials': additionalMaterials,
+      'additionalAccessories': additionalAccessories,
+      'customHierarchyResponsibles': customHierarchyResponsibles,
+      'lastModified': DateTime.now().toIso8601String(),
+    };
+  }
+
+  factory ProjectSessionModel.fromJson(Map<String, dynamic> json) {
+    final project = ProjectModel.fromStorageMap(json['project'] as Map<String, dynamic>? ?? {});
+    final photosList = (json['photos'] as List<dynamic>?)
+        ?.map((p) => SessionEvidenceRecord.fromJson(p as Map<String, dynamic>))
+        .toList() ?? [];
+
+    final session = ProjectSessionModel(
+      project: project,
+      photos: photosList,
+    );
+
+    if (json['excludedTools'] != null) {
+      session.excludedTools.addAll((json['excludedTools'] as List<dynamic>).map((e) => e.toString()));
+    }
+    if (json['excludedMaterials'] != null) {
+      session.excludedMaterials.addAll((json['excludedMaterials'] as List<dynamic>).map((e) => e.toString()));
+    }
+    if (json['excludedAccessories'] != null) {
+      session.excludedAccessories.addAll((json['excludedAccessories'] as List<dynamic>).map((e) => e.toString()));
+    }
+    if (json['additionalTools'] != null) {
+      session.additionalTools.addAll((json['additionalTools'] as List<dynamic>).map((e) => e.toString()));
+    }
+    if (json['additionalMaterials'] != null) {
+      session.additionalMaterials.addAll((json['additionalMaterials'] as List<dynamic>).map((e) => e.toString()));
+    }
+    if (json['additionalAccessories'] != null) {
+      session.additionalAccessories.addAll((json['additionalAccessories'] as List<dynamic>).map((e) => e.toString()));
+    }
+    if (json['customHierarchyResponsibles'] != null) {
+      final map = json['customHierarchyResponsibles'] as Map<String, dynamic>;
+      map.forEach((k, v) {
+        session.customHierarchyResponsibles[k] = v.toString();
+      });
+    }
+
+    return session;
   }
 }

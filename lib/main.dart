@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'views/form_screen.dart';
+import 'views/welcome_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,7 +31,7 @@ class VistecApp extends StatelessWidget {
           elevation: 0,
         ),
       ),
-      home: const FormScreen(),
+      home: const WelcomeScreen(),
     );
   }
 }

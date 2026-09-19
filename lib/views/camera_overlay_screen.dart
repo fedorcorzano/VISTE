@@ -17,6 +17,7 @@ import '../models/project_model.dart';
 import '../models/session_evidence_model.dart';
 import '../models/sticker_model.dart';
 import '../services/google_sheets_service.dart';
+import '../services/project_storage_service.dart';
 import 'project_summary_report_screen.dart';
 
 /// Rota la imagen 90° en segundo plano en un Isolate para no bloquear la interfaz (evita ANR y OOM)
@@ -273,11 +274,13 @@ class _StickerPaletteSheetState extends State<StickerPaletteSheet> {
 class CameraOverlayScreen extends StatefulWidget {
   final ProjectModel project;
   final Uint8List? initialImageBytes;
+  final ProjectSessionModel? existingSession;
 
   const CameraOverlayScreen({
     super.key,
     required this.project,
     this.initialImageBytes,
+    this.existingSession,
   });
 
   @override
@@ -321,7 +324,13 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
   @override
   void initState() {
     super.initState();
-    _sessionModel = ProjectSessionModel(project: widget.project);
+    if (widget.existingSession != null) {
+      _sessionModel = widget.existingSession!;
+      _sessionPhotoNumber = _sessionModel.photos.length + 1;
+      _savedPhotosCount = _sessionModel.photos.length;
+    } else {
+      _sessionModel = ProjectSessionModel(project: widget.project);
+    }
     if (widget.initialImageBytes != null) {
       _capturedImageBytes = widget.initialImageBytes;
       _updateImageAspectRatio(widget.initialImageBytes!);
@@ -1012,6 +1021,9 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
           timestamp: DateTime.now(),
         ),
       );
+
+      // Persistir inmediatamente la sesión completa en almacenamiento local del dispositivo
+      await ProjectStorageService.saveSession(_sessionModel);
 
       // 6. Preparar modelo con foto Base64 y metadatos completos
       final String base64Image = base64Encode(pngBytes);

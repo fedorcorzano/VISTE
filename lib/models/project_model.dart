@@ -111,6 +111,50 @@ class ProjectModel {
       'localImagePath': localImagePath ?? '',
     };
   }
+
+  Map<String, dynamic> toStorageMap() {
+    return {
+      'contacto': contacto,
+      'direccion': direccion,
+      'celular': celular,
+      'correo': correo,
+      'proyecto': proyecto,
+      'fecha': fecha,
+      'mapa': mapa,
+      'responsable': responsable,
+      'areaSector': areaSector,
+      'numFoto': numFoto,
+      'peligros': peligros,
+      'estructuras': estructuras,
+      'materiales': materiales,
+      'herramientas': herramientas,
+      'accesorios': accesorios,
+      'fotoBase64': fotoBase64,
+      'localImagePath': localImagePath ?? '',
+    };
+  }
+
+  factory ProjectModel.fromStorageMap(Map<String, dynamic> map) {
+    return ProjectModel(
+      contacto: map['contacto'] as String? ?? '',
+      direccion: map['direccion'] as String? ?? '',
+      celular: map['celular'] as String? ?? '',
+      correo: map['correo'] as String? ?? '',
+      proyecto: map['proyecto'] as String? ?? '',
+      fecha: map['fecha'] as String? ?? '',
+      mapa: map['mapa'] as String? ?? '',
+      responsable: map['responsable'] as String? ?? '',
+      areaSector: map['areaSector'] as String? ?? '',
+      numFoto: map['numFoto'] as int? ?? 1,
+      peligros: (map['peligros'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
+      estructuras: (map['estructuras'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
+      materiales: (map['materiales'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
+      herramientas: (map['herramientas'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
+      accesorios: (map['accesorios'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
+      fotoBase64: map['fotoBase64'] as String? ?? '',
+      localImagePath: map['localImagePath'] as String?,
+    );
+  }
 }
 
 class SheetsResponse {

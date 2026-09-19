@@ -10,14 +10,14 @@ import 'package:vistec/main.dart';
 import 'package:vistec/models/sticker_model.dart';
 
 void main() {
-  testWidgets('VistecApp loads form screen smoke test', (WidgetTester tester) async {
+  testWidgets('VistecApp loads welcome screen smoke test', (WidgetTester tester) async {
     // Build our app and trigger a frame.
     await tester.pumpWidget(const VistecApp());
 
-    // Verify that the title and form fields are present.
-    expect(find.text('VISTE • Relevamiento de Información'), findsOneWidget);
-    expect(find.text('Paso 1: Relevamiento de Información'), findsOneWidget);
-    expect(find.text('Iniciar Sesión de Fotos (Proyecto) 📸'), findsOneWidget);
+    // Verify that the welcome screen actions and password field are present
+    expect(find.text('Mis proyectos'), findsOneWidget);
+    expect(find.text('Buscar proyectos'), findsOneWidget);
+    expect(find.text('Registrar proyecto'), findsOneWidget);
   });
 
   test('TechnicalCatalogMatrix deduces prioritized tools and accessories', () {
