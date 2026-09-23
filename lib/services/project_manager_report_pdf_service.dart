@@ -325,7 +325,71 @@ class ProjectManagerReportPdfService {
               }),
             ],
           ),
-          pw.SizedBox(height: 20),
+          pw.SizedBox(height: 12),
+
+          // SECCIÓN 3: RESUMEN CONSOLIDADO DE METRADOS Y COTAS LINEALES
+          if (session.totalLinearMeters > 0) ...[
+            pw.Container(
+              padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+              color: const PdfColor.fromInt(0xFF1E3A8A), // Indigo / Navy
+              child: pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text(
+                    '3. METRADO CONSOLIDADO DE TUBERÍAS Y CANALIZACIONES (LONGITUDES RELEVADAS)',
+                    style: pw.TextStyle(
+                      color: PdfColors.white,
+                      fontSize: 9.5,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                  pw.Text(
+                    'TOTAL: ${session.totalLinearMeters.toStringAsFixed(2)} m',
+                    style: pw.TextStyle(
+                      color: PdfColors.amber200,
+                      fontSize: 9,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            pw.SizedBox(height: 6),
+            pw.Table(
+              border: pw.TableBorder.all(color: borderGray, width: 0.5),
+              children: [
+                pw.TableRow(
+                  decoration: const pw.BoxDecoration(color: lightBg),
+                  children: [
+                    _buildHeaderCell('Material / Canalización Relevada'),
+                    _buildHeaderCell('Metrado Total Acumulado (m)', align: pw.TextAlign.right),
+                  ],
+                ),
+                ...session.getConsolidatedLinearMeters().entries.map((entry) {
+                  return pw.TableRow(
+                    children: [
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(6),
+                        child: pw.Text(
+                          entry.key,
+                          style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: primaryColor),
+                        ),
+                      ),
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(6),
+                        child: pw.Text(
+                          '${entry.value.toStringAsFixed(2)} m',
+                          textAlign: pw.TextAlign.right,
+                          style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: const PdfColor.fromInt(0xFF1E3A8A)),
+                        ),
+                      ),
+                    ],
+                  );
+                }),
+              ],
+            ),
+            pw.SizedBox(height: 12),
+          ],
 
           // FIRMAS
           pw.Row(
@@ -351,11 +415,12 @@ class ProjectManagerReportPdfService {
       ),
     );
 
-    // 2. PÁGINAS DE FOTOGRAFÍAS TÉCNICAS COMPLETAS (CON TODOS LOS PINES DE METADATA)
+    // 2. PÁGINAS DE FOTOGRAFÍAS TÉCNICAS COMPLETAS Y DE COTAS/MEDIDAS LINEALES
     for (int i = 0; i < session.photos.length; i++) {
       final photo = session.photos[i];
       final imageProvider = pw.MemoryImage(photo.pngBytes); // Versión completa con todos los pines
 
+      // 2.1 Página de Evidencia Técnica con Metadata y Pines
       pdf.addPage(
         pw.Page(
           pageFormat: PdfPageFormat.a4,
@@ -368,7 +433,7 @@ class ProjectManagerReportPdfService {
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
                     pw.Text(
-                      'EVIDENCIA #${photo.photoNumber} (METADATA COMPLETA) - ${photo.areaSector.toUpperCase()}',
+                      'EVIDENCIA #${photo.photoNumber} (METADATA Y PINES) - ${photo.areaSector.toUpperCase()}',
                       style: pw.TextStyle(
                         color: primaryColor,
                         fontSize: 10.5,
@@ -385,7 +450,7 @@ class ProjectManagerReportPdfService {
                 pw.Container(height: 1.5, color: accentColor),
                 pw.SizedBox(height: 8),
 
-                // Imagen en Alta Resolución
+                // Imagen en Alta Resolución con Pines
                 pw.Expanded(
                   child: pw.Center(
                     child: pw.Container(
@@ -440,6 +505,119 @@ class ProjectManagerReportPdfService {
           },
         ),
       );
+
+      // 2.2 Página dedicada con Cotas y Medidas Lineales (excluyente de pines)
+      if (photo.measurementsPngBytes != null && photo.linearMeasurements.isNotEmpty) {
+        final measurementsImageProvider = pw.MemoryImage(photo.measurementsPngBytes!);
+
+        pdf.addPage(
+          pw.Page(
+            pageFormat: PdfPageFormat.a4,
+            margin: const pw.EdgeInsets.all(28),
+            build: (pw.Context context) {
+              return pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    children: [
+                      pw.Text(
+                        'EVIDENCIA #${photo.photoNumber} (COTAS Y MEDIDAS LINEALES) - ${photo.areaSector.toUpperCase()}',
+                        style: pw.TextStyle(
+                          color: const PdfColor.fromInt(0xFF0D9488), // Teal 600
+                          fontSize: 10.5,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
+                      ),
+                      pw.Text(
+                        'Proyecto: ${session.project.proyecto}',
+                        style: const pw.TextStyle(color: PdfColors.grey600, fontSize: 8),
+                      ),
+                    ],
+                  ),
+                  pw.SizedBox(height: 5),
+                  pw.Container(height: 1.5, color: const PdfColor.fromInt(0xFF0D9488)),
+                  pw.SizedBox(height: 8),
+
+                  // Imagen en Alta Resolución de Cotas y Medidas
+                  pw.Expanded(
+                    child: pw.Center(
+                      child: pw.Container(
+                        decoration: pw.BoxDecoration(
+                          border: pw.Border.all(color: borderGray, width: 1),
+                          borderRadius: pw.BorderRadius.circular(6),
+                        ),
+                        child: pw.Image(
+                          measurementsImageProvider,
+                          fit: pw.BoxFit.contain,
+                        ),
+                      ),
+                    ),
+                  ),
+                  pw.SizedBox(height: 8),
+
+                  // Tabla Detallada de Tramos y Metrados
+                  pw.Container(
+                    decoration: pw.BoxDecoration(
+                      border: pw.Border.all(color: borderGray, width: 0.5),
+                      borderRadius: pw.BorderRadius.circular(4),
+                    ),
+                    child: pw.Table(
+                      columnWidths: const {
+                        0: pw.FixedColumnWidth(40),
+                        1: pw.FlexColumnWidth(2.0),
+                        2: pw.FlexColumnWidth(2.5),
+                        3: pw.FixedColumnWidth(70),
+                      },
+                      children: [
+                        pw.TableRow(
+                          decoration: const pw.BoxDecoration(color: lightBg),
+                          children: [
+                            _buildHeaderCell('Cota', align: pw.TextAlign.center),
+                            _buildHeaderCell('Tramo / Puntos Extremos'),
+                            _buildHeaderCell('Material / Canalización'),
+                            _buildHeaderCell('Longitud', align: pw.TextAlign.right),
+                          ],
+                        ),
+                        ...photo.linearMeasurements.asMap().entries.map((entry) {
+                          final idx = entry.key + 1;
+                          final m = entry.value;
+                          final tramoStr = (m.startStructure != null && m.endStructure != null)
+                              ? '${m.startStructure} -> ${m.endStructure}'
+                              : (m.startStructure != null)
+                                  ? 'Desde ${m.startStructure}'
+                                  : 'Punto A -> Punto B';
+
+                          return pw.TableRow(
+                            children: [
+                              pw.Padding(
+                                padding: const pw.EdgeInsets.all(5),
+                                child: pw.Text('#$idx', textAlign: pw.TextAlign.center, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold, color: primaryColor)),
+                              ),
+                              pw.Padding(
+                                padding: const pw.EdgeInsets.all(5),
+                                child: pw.Text(tramoStr, style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey800)),
+                              ),
+                              pw.Padding(
+                                padding: const pw.EdgeInsets.all(5),
+                                child: pw.Text(m.material, style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey800)),
+                              ),
+                              pw.Padding(
+                                padding: const pw.EdgeInsets.all(5),
+                                child: pw.Text('${m.meters.toStringAsFixed(2)} m', textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold, color: const PdfColor.fromInt(0xFF0D9488))),
+                              ),
+                            ],
+                          );
+                        }),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+      }
     }
 
     return pdf.save();
@@ -485,12 +663,13 @@ class ProjectManagerReportPdfService {
     );
   }
 
-  static pw.Widget _buildHeaderCell(String text) {
+  static pw.Widget _buildHeaderCell(String text, {pw.TextAlign align = pw.TextAlign.left}) {
     return pw.Padding(
       padding: const pw.EdgeInsets.all(6),
       child: pw.Text(
         text,
-        style: pw.TextStyle(
+        textAlign: align,
+        style: const pw.TextStyle(
           fontSize: 8,
           fontWeight: pw.FontWeight.bold,
           color: PdfColor.fromInt(0xFF0F172A),

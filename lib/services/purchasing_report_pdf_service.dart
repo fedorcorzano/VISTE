@@ -12,6 +12,7 @@ class PurchasingReportPdfService {
 
     final materials = session.getValidatedMaterialsWithFrequency();
     final accessories = session.getValidatedConsolidatedAccessories();
+    final linearMetersMap = session.getConsolidatedLinearMeters();
 
     const primaryColor = PdfColor.fromInt(0xFF0F172A); // Slate 900
     const accentColor = PdfColor.fromInt(0xFF0284C7); // Sky 600
@@ -220,7 +221,8 @@ class PurchasingReportPdfService {
                 final count = entry.count;
                 final visualInfo = CatalogVisualService.getItemInfo(matName, isMaterial: true);
                 final unit = _deduceUnit(matName);
-                final qty = _calculateEstimatedQty(matName, count);
+                final verifiedMeters = _getMatchingMeters(matName, linearMetersMap);
+                final qty = _calculateEstimatedQty(matName, count, verifiedMeters);
 
                 return pw.TableRow(
                   children: [
@@ -254,6 +256,13 @@ class PurchasingReportPdfService {
                             visualInfo.specification,
                             style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey700),
                           ),
+                          if (verifiedMeters != null && verifiedMeters > 0) ...[
+                            pw.SizedBox(height: 2),
+                            pw.Text(
+                              'Cota verificada en fotos: ${verifiedMeters.toStringAsFixed(1)} m (+10% merma)',
+                              style: pw.TextStyle(fontSize: 6.5, color: emeraldColor, fontWeight: pw.FontWeight.bold),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -458,8 +467,38 @@ class PurchasingReportPdfService {
     return 'Und';
   }
 
-  static int _calculateEstimatedQty(String matName, int sectorCount) {
+  static double? _getMatchingMeters(String matName, Map<String, double> linearMetersMap) {
+    if (linearMetersMap.isEmpty) return null;
     final lower = matName.toLowerCase();
+    for (final entry in linearMetersMap.entries) {
+      final keyLower = entry.key.toLowerCase();
+      if (lower.contains(keyLower) || keyLower.contains(lower)) {
+        return entry.value;
+      }
+      if ((lower.contains('emt') && keyLower.contains('emt')) ||
+          (lower.contains('pvc') && keyLower.contains('pvc')) ||
+          (lower.contains('canaleta') && keyLower.contains('canaleta')) ||
+          (lower.contains('cable') && keyLower.contains('cable'))) {
+        return entry.value;
+      }
+    }
+    return null;
+  }
+
+  static int _calculateEstimatedQty(String matName, int sectorCount, [double? verifiedMeters]) {
+    final lower = matName.toLowerCase();
+    if (verifiedMeters != null && verifiedMeters > 0) {
+      if (lower.contains('tubo') || lower.contains('emt') || lower.contains('canaleta') || lower.contains('pvc')) {
+        // Tiras comerciales de 3m con 10% de merma técnica
+        return ((verifiedMeters * 1.10) / 3.0).ceil();
+      }
+      if (lower.contains('cable') || lower.contains('utp')) {
+        // Cajas de 305m con 15% de merma/reserva técnica
+        final boxes = ((verifiedMeters * 1.15) / 305.0).ceil();
+        return boxes < 1 ? 1 : boxes;
+      }
+    }
+
     if (lower.contains('tubo') || lower.contains('canaleta')) {
       return sectorCount * 5; // Estimado estándar de tiras por sector
     }

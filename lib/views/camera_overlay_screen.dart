@@ -12,6 +12,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../config/constants.dart';
+import '../models/linear_measurement_model.dart';
 import '../models/project_model.dart';
 import '../models/session_evidence_model.dart';
 import '../models/sticker_model.dart';
@@ -19,6 +20,7 @@ import '../services/google_sheets_service.dart';
 import '../services/project_storage_service.dart';
 import '../services/ssoma_ai_service.dart';
 import '../services/voice_recognition_service.dart';
+import '../widgets/measurement_overlay_widget.dart';
 import 'project_summary_report_screen.dart';
 
 /// Rota la imagen 90° en segundo plano en un Isolate para no bloquear la interfaz (evita ANR y OOM)
@@ -361,6 +363,9 @@ class CameraOverlayScreen extends StatefulWidget {
   State<CameraOverlayScreen> createState() => _CameraOverlayScreenState();
 }
 
+/// Modos excluyentes de visualización sobre la fotografía
+enum OverlayDisplayMode { pines, medidas }
+
 class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
   final GlobalKey _repaintBoundaryKey = GlobalKey();
   final GoogleSheetsService _sheetsService = GoogleSheetsService();
@@ -379,6 +384,31 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
       9 / 16; // Proporción adaptable horizontal o vertical
   bool _isProcessing = false;
   final List<PlacedSticker> _placedStickers = [];
+
+  // Modo de visualización excluyente: Pines vs Medidas
+  OverlayDisplayMode _overlayMode = OverlayDisplayMode.pines;
+  final List<LinearMeasurement> _linearMeasurements = [];
+  Offset? _cotaDragStart;
+  Offset? _cotaDragCurrent;
+  bool _showLoupe = false;
+
+  /// Extrae materiales de canalización / tubería colocados como pines en la foto para el selector contextual
+  List<String> _getContextualConduitMaterials() {
+    final List<String> result = [];
+    final placedMaterials = _placedStickers
+        .where((s) => s.sticker.category == StickerCategory.materiales)
+        .map((s) => s.sticker.title)
+        .toSet();
+
+    final conduitKeywords = ['TUBO', 'CANALETA', 'CONDUIT', 'BANDEJA', 'DUCTO', 'PVC', 'EMT'];
+    for (final mat in placedMaterials) {
+      final upper = mat.toUpperCase();
+      if (conduitKeywords.any((k) => upper.contains(k))) {
+        result.add(TechnicalCatalogMatrix.formatTitleCase(mat));
+      }
+    }
+    return result;
+  }
 
   // Sesión continua multiproyecto (VISTEC V2 & V3)
   int _sessionPhotoNumber = 1;
@@ -1876,8 +1906,16 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
 
     Uint8List pngBytes;
     Uint8List clientPngBytes;
+    Uint8List? measurementsPngBytes;
+    final initialDisplayMode = _overlayMode;
+
     try {
-      // 2.1 Imagen completa para Gestor de Proyectos (todos los pines y metadata en formato liviano)
+      // 2.1 Asegurar que la imagen principal con PINES se capture en modo Pines
+      if (_overlayMode != OverlayDisplayMode.pines) {
+        setState(() => _overlayMode = OverlayDisplayMode.pines);
+        await Future.delayed(const Duration(milliseconds: 40));
+      }
+
       ui.Image image = await boundary.toImage(pixelRatio: targetRatio);
       ByteData? byteData = await image.toByteData(
         format: ui.ImageByteFormat.png,
@@ -1888,10 +1926,27 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
       pngBytes = byteData.buffer.asUint8List();
       clientPngBytes = pngBytes; // Por defecto
       debugPrint(
-        'Imagen optimizada capturada: ${image.width} x ${image.height} (${(pngBytes.lengthInBytes / 1024).toStringAsFixed(1)} KB)',
+        'Imagen con pines capturada: ${image.width} x ${image.height} (${(pngBytes.lengthInBytes / 1024).toStringAsFixed(1)} KB)',
       );
 
-      // 2.2 Imagen exclusiva para Cliente (SOLO marcadores de seguridad SST)
+      // 2.2 Si hay cotas/medidas trazadas, capturar la imagen exclusiva de MEDIDAS (con pines ocultos)
+      if (_linearMeasurements.isNotEmpty) {
+        setState(() => _overlayMode = OverlayDisplayMode.medidas);
+        await Future.delayed(const Duration(milliseconds: 40));
+        ui.Image measImg = await boundary.toImage(pixelRatio: targetRatio);
+        ByteData? measBd = await measImg.toByteData(
+          format: ui.ImageByteFormat.png,
+        );
+        if (measBd != null) {
+          measurementsPngBytes = measBd.buffer.asUint8List();
+          debugPrint(
+            'Imagen exclusiva de medidas/cotas capturada: ${measImg.width} x ${measImg.height} (${(measurementsPngBytes.lengthInBytes / 1024).toStringAsFixed(1)} KB)',
+          );
+        }
+      }
+
+      // 2.3 Imagen exclusiva para Cliente (SOLO marcadores de seguridad SST)
+      setState(() => _overlayMode = OverlayDisplayMode.pines);
       final allStickersBackup = List<PlacedSticker>.from(_placedStickers);
       final hasNonSafety = _placedStickers.any(
         (s) => s.sticker.category != StickerCategory.peligros,
@@ -1916,7 +1971,10 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
         setState(() {
           _placedStickers.clear();
           _placedStickers.addAll(allStickersBackup);
+          _overlayMode = initialDisplayMode;
         });
+      } else {
+        setState(() => _overlayMode = initialDisplayMode);
       }
     } catch (e) {
       if (!mounted) return;
@@ -2090,6 +2148,16 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
       final String localFilePath = localFile.path;
       debugPrint('Imagen guardada localmente en: $localFilePath');
 
+      // Guardar también la imagen exclusiva con cotas/medidas si existe
+      if (measurementsPngBytes != null) {
+        final String medidasFileName =
+            localFileName.replaceAll('.png', '_medidas.png');
+        final File medidasFile =
+            File('${designatedFolder.path}/$medidasFileName');
+        await medidasFile.writeAsBytes(measurementsPngBytes);
+        debugPrint('Imagen de cotas/medidas guardada en: ${medidasFile.path}');
+      }
+
       // 4. Extraer etiquetas colocadas
       final List<String> peligrosTags = _placedStickers
           .where((s) => s.sticker.category == StickerCategory.peligros)
@@ -2127,6 +2195,8 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
           localImagePath: localFilePath,
           pngBytes: pngBytes,
           clientPngBytes: clientPngBytes,
+          measurementsPngBytes: measurementsPngBytes,
+          linearMeasurements: List<LinearMeasurement>.from(_linearMeasurements),
           estructuras: estructurasTags,
           materiales: materialesTags,
           peligros: peligrosTags,
@@ -2285,6 +2355,8 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                     _sessionPhotoNumber++;
                     _capturedImageBytes = null;
                     _placedStickers.clear();
+                    _linearMeasurements.clear();
+                    _overlayMode = OverlayDisplayMode.pines;
                     _resetZoom();
                   });
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -2636,17 +2708,123 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
   Widget _buildStickerEditorView() {
     return Column(
       children: [
-        // Instrucción rápida
+        // 1. Selector Segmentado Excluyente: [ 📍 Modo Pines ] vs [ 📏 Modo Medidas ]
+        Container(
+          margin: const EdgeInsets.fromLTRB(12, 6, 12, 4),
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0F172A),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFF334155)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  onTap: () => setState(() => _overlayMode = OverlayDisplayMode.pines),
+                  borderRadius: BorderRadius.circular(9),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 7),
+                    decoration: BoxDecoration(
+                      color: _overlayMode == OverlayDisplayMode.pines
+                          ? const Color(0xFF001F2F)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(9),
+                      border: _overlayMode == OverlayDisplayMode.pines
+                          ? Border.all(color: const Color(0xFF38BDF8), width: 1.5)
+                          : null,
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.location_on,
+                          size: 15,
+                          color: _overlayMode == OverlayDisplayMode.pines
+                              ? const Color(0xFF38BDF8)
+                              : Colors.white60,
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          '📍 Pines (${_placedStickers.length})',
+                          style: TextStyle(
+                            color: _overlayMode == OverlayDisplayMode.pines
+                                ? Colors.white
+                                : Colors.white60,
+                            fontWeight: _overlayMode == OverlayDisplayMode.pines
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: InkWell(
+                  onTap: () => setState(() => _overlayMode = OverlayDisplayMode.medidas),
+                  borderRadius: BorderRadius.circular(9),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 7),
+                    decoration: BoxDecoration(
+                      color: _overlayMode == OverlayDisplayMode.medidas
+                          ? const Color(0xFF001F2F)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(9),
+                      border: _overlayMode == OverlayDisplayMode.medidas
+                          ? Border.all(color: const Color(0xFFE3A51A), width: 1.5)
+                          : null,
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.straighten,
+                          size: 15,
+                          color: _overlayMode == OverlayDisplayMode.medidas
+                              ? const Color(0xFFE3A51A)
+                              : Colors.white60,
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          '📏 Medidas (${_linearMeasurements.length})',
+                          style: TextStyle(
+                            color: _overlayMode == OverlayDisplayMode.medidas
+                                ? Colors.white
+                                : Colors.white60,
+                            fontWeight: _overlayMode == OverlayDisplayMode.medidas
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Instrucción rápida contextual
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 14),
+          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 14),
           color: const Color(0xFF1E293B),
-          child: const Text(
-            '💡 Toca la foto para colocar un Pin (①, ②, ③). Toca un pin para cambiarlo o eliminarlo.',
+          child: Text(
+            _overlayMode == OverlayDisplayMode.pines
+                ? '💡 Modo Pines: Toca la foto para colocar pines o usa la barra inferior.'
+                : '📏 Modo Medidas: Arrastra entre estructuras. La lupa te ayuda a aproximar bordes.',
             textAlign: TextAlign.center,
             style: TextStyle(
-              color: Color(0xFF38BDF8),
-              fontSize: 12,
+              color: _overlayMode == OverlayDisplayMode.pines
+                  ? const Color(0xFF38BDF8)
+                  : const Color(0xFFE3A51A),
+              fontSize: 11,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -2665,7 +2843,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                     transformationController: _transformationController,
                     minScale: 1.0,
                     maxScale: 6.0,
-                    panEnabled: true,
+                    panEnabled: _overlayMode == OverlayDisplayMode.pines,
                     scaleEnabled: true,
                     child: Center(
                       child: AspectRatio(
@@ -2674,18 +2852,86 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                           key: _repaintBoundaryKey,
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
-                            onTapUp: (details) {
-                              // Centrar el pin en el punto exacto del toque
-                              final Offset tapPosition = Offset(
-                                details.localPosition.dx,
-                                details.localPosition.dy,
-                              );
-                              _openStickerSelector(
-                                title:
-                                    'Añadir Pin #${_placedStickers.length + 1}',
-                                initialPosition: tapPosition,
-                              );
-                            },
+                            onTapUp: _overlayMode == OverlayDisplayMode.pines
+                                ? (details) {
+                                    // Centrar el pin en el punto exacto del toque
+                                    final Offset tapPosition = Offset(
+                                      details.localPosition.dx,
+                                      details.localPosition.dy,
+                                    );
+                                    _openStickerSelector(
+                                      title:
+                                          'Añadir Pin #${_placedStickers.length + 1}',
+                                      initialPosition: tapPosition,
+                                    );
+                                  }
+                                : null,
+                            onPanStart: _overlayMode == OverlayDisplayMode.medidas
+                                ? (details) {
+                                    setState(() {
+                                      _cotaDragStart = details.localPosition;
+                                      _cotaDragCurrent = details.localPosition;
+                                      _showLoupe = true;
+                                    });
+                                  }
+                                : null,
+                            onPanUpdate: _overlayMode == OverlayDisplayMode.medidas
+                                ? (details) {
+                                    setState(() {
+                                      _cotaDragCurrent = details.localPosition;
+                                    });
+                                  }
+                                : null,
+                            onPanEnd: _overlayMode == OverlayDisplayMode.medidas
+                                ? (details) async {
+                                    final start = _cotaDragStart;
+                                    final end = _cotaDragCurrent;
+                                    setState(() {
+                                      _showLoupe = false;
+                                      _cotaDragStart = null;
+                                      _cotaDragCurrent = null;
+                                    });
+
+                                    if (start != null && end != null) {
+                                      final dx = end.dx - start.dx;
+                                      final dy = end.dy - start.dy;
+                                      final distance = math.sqrt(dx * dx + dy * dy);
+                                      if (distance > 15) {
+                                        final newCota =
+                                            await showDialog<LinearMeasurement>(
+                                          context: context,
+                                          builder: (ctx) =>
+                                              MeasurementCaptureModal(
+                                            start: start,
+                                            end: end,
+                                            contextualConduits:
+                                                _getContextualConduitMaterials(),
+                                            voiceService: _voiceService,
+                                          ),
+                                        );
+                                        if (newCota != null) {
+                                          setState(() {
+                                            _linearMeasurements.add(newCota);
+                                          });
+                                          if (mounted) {
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(
+                                              SnackBar(
+                                                content: Text(
+                                                  '✓ Cota registrada: ${newCota.labelFormatted}',
+                                                ),
+                                                backgroundColor:
+                                                    const Color(0xFF10B981),
+                                                duration:
+                                                    const Duration(seconds: 1),
+                                              ),
+                                            );
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                : null,
                             child: Stack(
                               fit: StackFit.expand,
                               children: [
@@ -2767,11 +3013,11 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                                   ),
                                 ),
 
-                                // Pines numerados colocados arrastrables (sin leyenda superpuesta dentro de la foto)
-                                for (int i = 0; i < _placedStickers.length; i++)
-                                  _buildNumberedPin(_placedStickers[i], i),
+                                // 1. MODO PINES (Visibles únicamente en modo Pines)
+                                if (_overlayMode == OverlayDisplayMode.pines) ...[
+                                  for (int i = 0; i < _placedStickers.length; i++)
+                                    _buildNumberedPin(_placedStickers[i], i),
 
-                                // Leyenda técnica ultra-compacta y translúcida al pie de la imagen
                                   if (_placedStickers.isNotEmpty)
                                     Positioned(
                                       bottom: 5,
@@ -2780,17 +3026,40 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                                       child: _buildInPhotoTranslucentLegend(),
                                     ),
                                 ],
-                              ),
+
+                                // 2. MODO MEDIDAS (Cotas y Lupa de precisión, pines ocultos para no saturar)
+                                if (_overlayMode == OverlayDisplayMode.medidas) ...[
+                                  CustomPaint(
+                                    painter: MeasurementLinesPainter(
+                                      measurements: _linearMeasurements,
+                                      currentStart: _cotaDragStart,
+                                      currentEnd: _cotaDragCurrent,
+                                      activeMaterial:
+                                          _getContextualConduitMaterials()
+                                                  .isNotEmpty
+                                              ? _getContextualConduitMaterials()
+                                                  .first
+                                              : null,
+                                    ),
+                                  ),
+                                  if (_showLoupe && _cotaDragCurrent != null)
+                                    LoupeMagnifierWidget(
+                                      touchPosition: _cotaDragCurrent!,
+                                      canvasSize: MediaQuery.of(context).size,
+                                    ),
+                                ],
+                              ],
                             ),
                           ),
                         ),
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
+        ),
 
         // Barra inferior de controles (Diseño en 2 niveles: 4 Botones + Botón Guardar Fijo)
         Container(
@@ -2804,137 +3073,223 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Nivel 1: Los 4 Botones de Colocación de Pines y Agente IA por Voz
-                Row(
-                  children: [
-                    // 1. Estructuras (Ícono de estructura, Azul)
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () => _openStickerSelector(
-                          title: 'Estructuras',
-                          initialTabIndex: 0,
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF0F2744),
-                          foregroundColor: const Color(0xFF00B0FF),
-                          side: const BorderSide(color: Color(0xFF00B0FF), width: 1.2),
-                          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        ),
-                        child: const Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.domain, size: 18, color: Color(0xFF00B0FF)),
-                            SizedBox(height: 2),
-                            Text(
-                              'Estructuras',
-                              style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
+                // Nivel 1: Alterna según el modo activo (Pines vs Medidas)
+                if (_overlayMode == OverlayDisplayMode.pines)
+                  Row(
+                    children: [
+                      // 1. Estructuras (Ícono de estructura, Azul)
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () => _openStickerSelector(
+                            title: 'Estructuras',
+                            initialTabIndex: 0,
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF0F2744),
+                            foregroundColor: const Color(0xFF00B0FF),
+                            side: const BorderSide(color: Color(0xFF00B0FF), width: 1.2),
+                            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          child: const Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.domain, size: 18, color: Color(0xFF00B0FF)),
+                              SizedBox(height: 2),
+                              Text(
+                                'Estructuras',
+                                style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 5),
+                      const SizedBox(width: 5),
 
-                    // 2. Materiales (Ícono de martillo y destornillador, Verde)
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () => _openStickerSelector(
-                          title: 'Materiales',
-                          initialTabIndex: 1,
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF0C381E),
-                          foregroundColor: const Color(0xFF00E676),
-                          side: const BorderSide(color: Color(0xFF00E676), width: 1.2),
-                          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        ),
-                        child: const Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.construction, size: 18, color: Color(0xFF00E676)),
-                            SizedBox(height: 2),
-                            Text(
-                              'Materiales',
-                              style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
+                      // 2. Materiales (Ícono de martillo y destornillador, Verde)
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () => _openStickerSelector(
+                            title: 'Materiales',
+                            initialTabIndex: 1,
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF0C381E),
+                            foregroundColor: const Color(0xFF00E676),
+                            side: const BorderSide(color: Color(0xFF00E676), width: 1.2),
+                            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          child: const Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.construction, size: 18, color: Color(0xFF00E676)),
+                              SizedBox(height: 2),
+                              Text(
+                                'Materiales',
+                                style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 5),
+                      const SizedBox(width: 5),
 
-                    // 3. SSOMA (Ícono de triángulo con signo de advertencia, Amarillo)
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () => _openStickerSelector(
-                          title: 'Peligros SSOMA',
-                          initialTabIndex: 2,
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF382D05),
-                          foregroundColor: const Color(0xFFFFD600),
-                          side: const BorderSide(color: Color(0xFFFFD600), width: 1.2),
-                          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        ),
-                        child: const Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.warning_amber_rounded, size: 18, color: Color(0xFFFFD600)),
-                            SizedBox(height: 2),
-                            Text(
-                              'SSOMA',
-                              style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
+                      // 3. SSOMA (Ícono de triángulo con signo de advertencia, Amarillo)
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () => _openStickerSelector(
+                            title: 'Peligros SSOMA',
+                            initialTabIndex: 2,
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF382D05),
+                            foregroundColor: const Color(0xFFFFD600),
+                            side: const BorderSide(color: Color(0xFFFFD600), width: 1.2),
+                            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          child: const Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.warning_amber_rounded, size: 18, color: Color(0xFFFFD600)),
+                              SizedBox(height: 2),
+                              Text(
+                                'SSOMA',
+                                style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 5),
+                      const SizedBox(width: 5),
 
-                    // 4. Agente IA (Micrófono + Rayo, Vigilarte #001F2F / #E3A51A)
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: _startVoiceRecognitionModal,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF001F2F),
-                          foregroundColor: const Color(0xFFE3A51A),
-                          side: const BorderSide(color: Color(0xFFE3A51A), width: 1.4),
-                          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        ),
-                        child: const Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.mic, size: 16, color: Color(0xFFE3A51A)),
-                                Icon(Icons.bolt, size: 16, color: Color(0xFFE3A51A)),
-                              ],
-                            ),
-                            SizedBox(height: 2),
-                            Text(
-                              'Agente IA',
-                              style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFFE3A51A)),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
+                      // 4. Agente IA (Micrófono + Rayo, Vigilarte #001F2F / #E3A51A)
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: _startVoiceRecognitionModal,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF001F2F),
+                            foregroundColor: const Color(0xFFE3A51A),
+                            side: const BorderSide(color: Color(0xFFE3A51A), width: 1.4),
+                            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          child: const Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.mic, size: 16, color: Color(0xFFE3A51A)),
+                                  Icon(Icons.bolt, size: 16, color: Color(0xFFE3A51A)),
+                                ],
+                              ),
+                              SizedBox(height: 2),
+                              Text(
+                                'Agente IA',
+                                style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFFE3A51A)),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  )
+                else
+                  // Barra de herramientas del Modo Medidas
+                  Row(
+                    children: [
+                      // Indicador de Total de Metros Acumulados
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF0F172A),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: const Color(0xFFE3A51A), width: 1.2),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text(
+                                '📏 METRADO TOTAL',
+                                style: TextStyle(
+                                  color: Color(0xFFE3A51A),
+                                  fontSize: 9.0,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '${_linearMeasurements.fold<double>(0.0, (acc, m) => acc + m.longitudMetros).toStringAsFixed(2)} m (${_linearMeasurements.length} tramos)',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      // Botón Deshacer última cota
+                      ElevatedButton.icon(
+                        onPressed: _linearMeasurements.isEmpty
+                            ? null
+                            : () {
+                                setState(() {
+                                  _linearMeasurements.removeLast();
+                                });
+                              },
+                        icon: const Icon(Icons.undo, size: 16),
+                        label: const Text('Deshacer', style: TextStyle(fontSize: 11)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF334155),
+                          foregroundColor: Colors.white,
+                          disabledBackgroundColor: Colors.white10,
+                          disabledForegroundColor: Colors.white24,
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      // Botón Limpiar medidas
+                      IconButton(
+                        onPressed: _linearMeasurements.isEmpty
+                            ? null
+                            : () {
+                                setState(() {
+                                  _linearMeasurements.clear();
+                                });
+                              },
+                        icon: const Icon(Icons.delete_outline, size: 20),
+                        tooltip: 'Limpiar todas las medidas',
+                        style: IconButton.styleFrom(
+                          backgroundColor: const Color(0xFF7F1D1D),
+                          foregroundColor: Colors.white,
+                          disabledBackgroundColor: Colors.white10,
+                          disabledForegroundColor: Colors.white24,
+                          padding: const EdgeInsets.all(10),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                      ),
+                    ],
+                  ),
                 const SizedBox(height: 8),
 
                 // Nivel 2: Fila Principal de Guardado y Avance (FIJA, SIEMPRE VISIBLE EN PANTALLA)

@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'linear_measurement_model.dart';
 import 'project_model.dart';
 
 /// Representa la frecuencia y criticidad de un ítem (herramienta o material) en el proyecto
@@ -45,6 +46,8 @@ class SessionEvidenceRecord {
   final String localImagePath;
   final Uint8List pngBytes; // Versión completa con todos los pines para Gestor de Proyectos
   final Uint8List? clientPngBytes; // Versión exclusiva para el Cliente (SOLO marcadores de seguridad SST)
+  final Uint8List? measurementsPngBytes; // Versión exclusiva con Cotas y Medidas (pines ocultos)
+  final List<LinearMeasurement> linearMeasurements; // Cotas y medidas lineales estructuradas
   final List<String> estructuras;
   final List<String> materiales;
   final List<String> peligros;
@@ -58,6 +61,8 @@ class SessionEvidenceRecord {
     required this.localImagePath,
     required this.pngBytes,
     this.clientPngBytes,
+    this.measurementsPngBytes,
+    this.linearMeasurements = const [],
     required this.estructuras,
     required this.materiales,
     required this.peligros,
@@ -69,6 +74,9 @@ class SessionEvidenceRecord {
   /// Retorna la imagen adecuada para el cliente (con solo marcadores SST) o fallback a la completa
   Uint8List get clientImageBytes => clientPngBytes ?? pngBytes;
 
+  /// Retorna la imagen con cotas o null si no tiene medidas
+  Uint8List? get measurementsImageBytes => measurementsPngBytes;
+
   Map<String, dynamic> toJson() {
     return {
       'photoNumber': photoNumber,
@@ -79,6 +87,7 @@ class SessionEvidenceRecord {
       'peligros': peligros,
       'herramientas': herramientas,
       'accesorios': accesorios,
+      'linearMeasurements': linearMeasurements.map((m) => m.toJson()).toList(),
       'timestamp': timestamp.toIso8601String(),
     };
   }
@@ -87,6 +96,7 @@ class SessionEvidenceRecord {
     final String imagePath = json['localImagePath'] as String? ?? '';
     Uint8List loadedBytes = Uint8List(0);
     Uint8List? loadedClientBytes;
+    Uint8List? loadedMeasurementsBytes;
 
     if (imagePath.isNotEmpty) {
       final file = File(imagePath);
@@ -102,7 +112,19 @@ class SessionEvidenceRecord {
           loadedClientBytes = sstFile.readAsBytesSync();
         } catch (_) {}
       }
+      final medidasPath = imagePath.replaceAll('.png', '_medidas.png');
+      final medidasFile = File(medidasPath);
+      if (medidasFile.existsSync()) {
+        try {
+          loadedMeasurementsBytes = medidasFile.readAsBytesSync();
+        } catch (_) {}
+      }
     }
+
+    final rawMeasurements = json['linearMeasurements'] as List<dynamic>? ?? [];
+    final parsedMeasurements = rawMeasurements
+        .map((m) => LinearMeasurement.fromJson(m as Map<String, dynamic>))
+        .toList();
 
     return SessionEvidenceRecord(
       photoNumber: json['photoNumber'] as int? ?? 1,
@@ -110,6 +132,8 @@ class SessionEvidenceRecord {
       localImagePath: imagePath,
       pngBytes: loadedBytes,
       clientPngBytes: loadedClientBytes,
+      measurementsPngBytes: loadedMeasurementsBytes,
+      linearMeasurements: parsedMeasurements,
       estructuras: (json['estructuras'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
       materiales: (json['materiales'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
       peligros: (json['peligros'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
@@ -341,6 +365,37 @@ class ProjectSessionModel {
     }
     filtered.sort();
     return filtered;
+  }
+
+  /// Consolidado de metrados lineales totales por material (ej: {"Tubo EMT 3/4\"": 45.0, "Canaleta 40x25": 18.5})
+  Map<String, double> getConsolidatedLinearMeters() {
+    final Map<String, double> totals = {};
+    for (final photo in photos) {
+      for (final m in photo.linearMeasurements) {
+        totals[m.material] = (totals[m.material] ?? 0.0) + m.longitudMetros;
+      }
+    }
+    return totals;
+  }
+
+  /// Total general acumulado de metros lineales en el proyecto
+  double get totalLinearMeters {
+    double sum = 0.0;
+    for (final photo in photos) {
+      for (final m in photo.linearMeasurements) {
+        sum += m.longitudMetros;
+      }
+    }
+    return sum;
+  }
+
+  /// Todas las mediciones lineales de la sesión
+  List<LinearMeasurement> getAllMeasurements() {
+    final List<LinearMeasurement> list = [];
+    for (final photo in photos) {
+      list.addAll(photo.linearMeasurements);
+    }
+    return list;
   }
 
   /// Identificador único y seguro para nombre de archivo en almacenamiento local
