@@ -6,8 +6,10 @@ import '../services/warehouse_report_pdf_service.dart';
 import '../services/purchasing_report_pdf_service.dart';
 import '../services/project_manager_report_pdf_service.dart';
 import '../services/client_report_pdf_service.dart';
+import '../services/iperc_report_pdf_service.dart';
 import '../services/catalog_visual_service.dart';
 import '../services/google_sheets_service.dart';
+import '../widgets/frequency_charts_widget.dart';
 import 'catalog_manager_screen.dart';
 
 class ProjectSummaryReportScreen extends StatefulWidget {
@@ -30,6 +32,7 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
   Uint8List? _purchasingPdfBytes;
   Uint8List? _managerPdfBytes;
   Uint8List? _clientPdfBytes;
+  int _selectedAnalyticsCategory = 0; // 0: Herramientas, 1: Materiales, 2: Accesorios
 
   @override
   void initState() {
@@ -200,6 +203,60 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
     );
   }
 
+  /// Visor y exportador de la Matriz IPERC Continuo formal (Fase 2 - Proyecto Aprobado / Ejecución)
+  Future<void> _showIpercPreviewDialog() async {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog.fullscreen(
+        child: Scaffold(
+          backgroundColor: const Color(0xFF0F172A),
+          appBar: AppBar(
+            backgroundColor: const Color(0xFF001F2F),
+            title: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Matriz IPERC Continuo (Fase 2 - Ejecución)',
+                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  'Ley N° 29783 • D.S. 005-2012-TR • Norma Técnica G.050',
+                  style: TextStyle(color: Color(0xFFE3A51A), fontSize: 11),
+                ),
+              ],
+            ),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.close, color: Colors.white70),
+                onPressed: () => Navigator.pop(ctx),
+              ),
+            ],
+          ),
+          body: PdfPreview(
+            build: (format) => IpercReportPdfService.generatePdf(widget.session),
+            canChangeOrientation: false,
+            canChangePageFormat: false,
+            canDebug: false,
+            pdfFileName: 'VIGILARTE_Matriz_IPERC_Continuo.pdf',
+            previewPageMargin: const EdgeInsets.all(12),
+            actions: [
+              PdfPreviewAction(
+                icon: const Icon(Icons.share, color: Colors.white),
+                onPressed: (context, build, pageFormat) async {
+                  final bytes = await build(pageFormat);
+                  await Printing.sharePdf(
+                    bytes: bytes,
+                    filename: 'VIGILARTE_Matriz_IPERC_Continuo.pdf',
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -224,6 +281,11 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: 'Matriz IPERC Continuo (Fase 2 - Ejecución)',
+            icon: const Icon(Icons.assignment_turned_in_outlined, color: Color(0xFFE3A51A)),
+            onPressed: _showIpercPreviewDialog,
+          ),
           IconButton(
             tooltip: 'Validación del Gestor (Excluir/Editar SST)',
             icon: const Icon(Icons.fact_check_outlined, color: Colors.amberAccent),
@@ -290,6 +352,7 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
     final tools = widget.session.getValidatedToolsWithFrequency();
     final materials = widget.session.getValidatedMaterialsWithFrequency();
     final accessories = widget.session.getValidatedConsolidatedAccessories();
+    final accessoriesFreq = widget.session.getAccessoriesWithFrequency();
     final int excludedCount = widget.session.excludedTools.length +
         widget.session.excludedMaterials.length +
         widget.session.excludedAccessories.length;
@@ -506,87 +569,179 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
         ),
         const SizedBox(height: 20),
 
-        // 3. Herramientas con Fotos Reales y Frecuencia
+        // 3. SECCIÓN DE ANALÍTICA GRÁFICA DE FRECUENCIAS Y PORCENTAJES
         _buildSectionHeader(
-          icon: Icons.handyman,
-          title: 'HERRAMIENTAS PRIORIZADAS EN LA OBRA',
-          subtitle: 'Herramientas deducidas según las estructuras y materiales de cada foto',
+          icon: Icons.analytics_outlined,
+          title: 'ANÁLISIS GRÁFICO DE RECURSOS EN OBRA',
+          subtitle: 'Frecuencia de repetición y porcentajes de presencia en las fotos del proyecto',
         ),
         const SizedBox(height: 12),
 
-        ...tools.map((tool) {
-          final visual = CatalogVisualService.getItemInfo(tool.name, isMaterial: false);
-          return _buildVisualCard(
-            item: visual,
-            frequency: tool,
-            isTool: true,
-          );
-        }),
-
-        const SizedBox(height: 24),
-
-        // 4. Materiales con Fotos Reales y Frecuencia
-        _buildSectionHeader(
-          icon: Icons.inventory_2,
-          title: 'MATERIALES REQUERIDOS PARA INSTALACIÓN',
-          subtitle: 'Tuberías y canalizaciones identificadas en el proyecto',
-        ),
-        const SizedBox(height: 12),
-
-        ...materials.map((mat) {
-          final visual = CatalogVisualService.getItemInfo(mat.name, isMaterial: true);
-          return _buildVisualCard(
-            item: visual,
-            frequency: mat,
-            isTool: false,
-          );
-        }),
-
-        const SizedBox(height: 24),
-
-        // 5. Accesorios y consumibles deducidos
-        _buildSectionHeader(
-          icon: Icons.category,
-          title: 'ACCESORIOS Y CONSUMIBLES DEDUCIDOS',
-          subtitle: 'Conectores, uniones, abrazaderas y cajas de paso requeridas',
-        ),
-        const SizedBox(height: 12),
-
+        // Selector de Categoría (Pestañas interactivas de Gráficos)
         Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(4),
           decoration: BoxDecoration(
             color: const Color(0xFF1E293B),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: const Color(0xFF334155)),
           ),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: accessories.map((acc) {
-              return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0F172A),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFF475569)),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.check_circle_outline, color: Color(0xFF4ADE80), size: 14),
-                    const SizedBox(width: 6),
-                    Text(
-                      acc,
-                      style: const TextStyle(color: Colors.white, fontSize: 11),
-                    ),
-                  ],
-                ),
-              );
-            }).toList(),
+          child: Row(
+            children: [
+              _buildCategoryTab(
+                label: 'Herramientas',
+                count: tools.length,
+                icon: Icons.handyman,
+                isSelected: _selectedAnalyticsCategory == 0,
+                color: const Color(0xFF38BDF8),
+                onTap: () => setState(() => _selectedAnalyticsCategory = 0),
+              ),
+              const SizedBox(width: 4),
+              _buildCategoryTab(
+                label: 'Materiales',
+                count: materials.length,
+                icon: Icons.inventory_2,
+                isSelected: _selectedAnalyticsCategory == 1,
+                color: const Color(0xFF10B981),
+                onTap: () => setState(() => _selectedAnalyticsCategory = 1),
+              ),
+              const SizedBox(width: 4),
+              _buildCategoryTab(
+                label: 'Accesorios',
+                count: accessoriesFreq.length,
+                icon: Icons.category,
+                isSelected: _selectedAnalyticsCategory == 2,
+                color: const Color(0xFFA855F7),
+                onTap: () => setState(() => _selectedAnalyticsCategory = 2),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Visualizaciones Gráficas según Categoría Seleccionada
+        if (_selectedAnalyticsCategory == 0) ...[
+          // Herramientas: Gráfico Circular + Gráfico de Barras de Frecuencia
+          DonutChartWidget(
+            items: tools,
+            title: 'Distribución Porcentual de Herramientas',
+            centerSubtitle: 'Herramientas',
+          ),
+          const SizedBox(height: 16),
+          FrequencyBarChartWidget(
+            items: tools,
+            title: 'Frecuencia de Herramientas en Fotos',
+            accentColor: const Color(0xFF38BDF8),
+            icon: Icons.handyman,
+          ),
+        ] else if (_selectedAnalyticsCategory == 1) ...[
+          // Materiales: Gráfico Circular + Gráfico de Barras de Frecuencia
+          DonutChartWidget(
+            items: materials,
+            title: 'Distribución Porcentual de Materiales',
+            centerSubtitle: 'Materiales',
+          ),
+          const SizedBox(height: 16),
+          FrequencyBarChartWidget(
+            items: materials,
+            title: 'Frecuencia de Materiales en Fotos',
+            accentColor: const Color(0xFF10B981),
+            icon: Icons.inventory_2,
+          ),
+        ] else ...[
+          // Accesorios: Gráfico Circular + Gráfico de Barras de Frecuencia
+          DonutChartWidget(
+            items: accessoriesFreq,
+            title: 'Distribución Porcentual de Accesorios',
+            centerSubtitle: 'Accesorios',
+          ),
+          const SizedBox(height: 16),
+          FrequencyBarChartWidget(
+            items: accessoriesFreq,
+            title: 'Frecuencia de Accesorios Deducidos',
+            accentColor: const Color(0xFFA855F7),
+            icon: Icons.category,
+          ),
+        ],
+
+        const SizedBox(height: 16),
+
+        // Catálogo Visual Opcional Expandible
+        Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            title: const Text(
+              '📸 Ver Tarjetas de Catálogo Visual',
+              style: TextStyle(
+                color: Color(0xFF94A3B8),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            iconColor: const Color(0xFF38BDF8),
+            collapsedIconColor: const Color(0xFF94A3B8),
+            children: [
+              ...tools.map((tool) {
+                final visual = CatalogVisualService.getItemInfo(tool.name, isMaterial: false);
+                return _buildVisualCard(
+                  item: visual,
+                  frequency: tool,
+                  isTool: true,
+                );
+              }),
+              ...materials.map((mat) {
+                final visual = CatalogVisualService.getItemInfo(mat.name, isMaterial: true);
+                return _buildVisualCard(
+                  item: visual,
+                  frequency: mat,
+                  isTool: false,
+                );
+              }),
+            ],
           ),
         ),
         const SizedBox(height: 40),
       ],
+    );
+  }
+
+  Widget _buildCategoryTab({
+    required String label,
+    required int count,
+    required IconData icon,
+    required bool isSelected,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+          decoration: BoxDecoration(
+            color: isSelected ? color.withValues(alpha: 0.2) : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+            border: isSelected ? Border.all(color: color, width: 1.2) : null,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: isSelected ? color : Colors.white60, size: 16),
+              const SizedBox(height: 2),
+              Text(
+                '$label ($count)',
+                style: TextStyle(
+                  color: isSelected ? Colors.white : Colors.white60,
+                  fontSize: 10.5,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 

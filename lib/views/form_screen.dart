@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:image_picker/image_picker.dart';
 
 import '../models/project_model.dart';
 import '../models/sticker_model.dart';
@@ -168,80 +167,6 @@ class _FormScreenState extends State<FormScreen> {
             backgroundColor: Color(0xFF10B981),
           ),
         );
-      }
-    }
-  }
-
-  Future<void> _avanzarConGaleria() async {
-    if (_formKey.currentState!.validate()) {
-      try {
-        final XFile? image = await ImagePicker().pickImage(
-          source: ImageSource.gallery,
-          imageQuality: 100,
-        );
-        if (image == null) return;
-        final bytes = await image.readAsBytes();
-
-        final String mapaGps = _mapaController.text.trim();
-        final proyectoData = ProjectModel(
-          contacto: _contactoController.text.trim(),
-          direccion: _direccionController.text.trim().isEmpty
-              ? 'Sin dirección'
-              : _direccionController.text.trim(),
-          celular: _celularController.text.trim().isEmpty
-              ? 'N/A'
-              : _celularController.text.trim(),
-          correo: _correoController.text.trim().isEmpty
-              ? 'N/A'
-              : _correoController.text.trim(),
-          proyecto: _selectedProyecto ?? 'General',
-          fecha: DateTime.now().toString().split('.')[0],
-          mapa: (mapaGps.isEmpty ||
-                  mapaGps.contains('Obteniendo') ||
-                  mapaGps.contains('Permiso') ||
-                  mapaGps.contains('desactivado'))
-              ? '0.0, 0.0'
-              : mapaGps,
-          responsable: _responsableController.text.trim(),
-          peligros: [],
-          estructuras: [],
-          materiales: [],
-          fotoBase64: '',
-        );
-
-        if (!mounted) return;
-        final resultado = await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => CameraOverlayScreen(
-              project: proyectoData,
-              initialImageBytes: bytes,
-            ),
-          ),
-        );
-
-        if (!mounted) return;
-        if (resultado == true) {
-          _contactoController.clear();
-          _direccionController.clear();
-          _celularController.clear();
-          _correoController.clear();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Registro finalizado exitosamente.'),
-              backgroundColor: Color(0xFF10B981),
-            ),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error al cargar imagen de la memoria: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
       }
     }
   }
@@ -459,47 +384,27 @@ class _FormScreenState extends State<FormScreen> {
                 // Botón Siguiente: Avanzar a Sesión de Fotos
                 ElevatedButton.icon(
                   onPressed: _avanzarACamara,
-                  icon: const Icon(Icons.photo_camera, size: 22),
+                  icon: const Icon(Icons.photo_camera, size: 22, color: Color(0xFF001F2F)),
                   label: const Text(
                     'Iniciar Sesión de Fotos (Proyecto) 📸',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
+                      color: Color(0xFF001F2F),
                     ),
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF38BDF8),
-                    foregroundColor: const Color(0xFF0F172A),
+                    backgroundColor: const Color(0xFFE3A51A), // COLOR 02 AMARILLO VIGILARTE
+                    foregroundColor: const Color(0xFF001F2F),
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     elevation: 4,
+                    shadowColor: const Color(0xFFE3A51A).withValues(alpha: 0.4),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),
                   ),
                 ),
-                const SizedBox(height: 12),
-
-                // Botón Alternativo: Iniciar Sesión con Foto de la Galería
-                OutlinedButton.icon(
-                  onPressed: _avanzarConGaleria,
-                  icon: const Icon(Icons.photo_library_outlined, size: 20, color: Color(0xFF38BDF8)),
-                  label: const Text(
-                    'Iniciar Sesión con Foto de Galería 📁',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    side: const BorderSide(color: Color(0xFF38BDF8), width: 1.5),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 24),
               ],
             ),
           ),

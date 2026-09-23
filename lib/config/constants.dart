@@ -4,4 +4,10 @@ class Constants {
   
   // Nombre de la carpeta designada para almacenamiento de evidencias locales
   static const String localFolderName = 'Vigilarte_Evidencias';
+
+  // Clave de API de Google Gemini (Google AI Studio) para el Asistente Auditor SSOMA
+  static const String geminiApiKey = String.fromEnvironment(
+    'GEMINI_API_KEY',
+    defaultValue: '',
+  );
 }

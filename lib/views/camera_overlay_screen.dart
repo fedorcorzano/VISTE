@@ -10,7 +10,6 @@ import 'package:flutter/rendering.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:vector_math/vector_math_64.dart' show Vector3;
 
 import '../config/constants.dart';
 import '../models/project_model.dart';
@@ -18,6 +17,8 @@ import '../models/session_evidence_model.dart';
 import '../models/sticker_model.dart';
 import '../services/google_sheets_service.dart';
 import '../services/project_storage_service.dart';
+import '../services/ssoma_ai_service.dart';
+import '../services/voice_recognition_service.dart';
 import 'project_summary_report_screen.dart';
 
 /// Rota la imagen 90° en segundo plano en un Isolate para no bloquear la interfaz (evita ANR y OOM)
@@ -51,12 +52,14 @@ class StickerPaletteSheet extends StatefulWidget {
   final Map<String, List<String>> catalogs;
   final Function(StickerModel) onStickerSelected;
   final String? title;
+  final int initialTabIndex;
 
   const StickerPaletteSheet({
     super.key,
     required this.catalogs,
     required this.onStickerSelected,
     this.title,
+    this.initialTabIndex = 0,
   });
 
   @override
@@ -66,18 +69,57 @@ class StickerPaletteSheet extends StatefulWidget {
 class _StickerPaletteSheetState extends State<StickerPaletteSheet> {
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
+  final VoiceRecognitionService _voiceService = VoiceRecognitionService();
+  bool _isListening = false;
 
   @override
   void dispose() {
     _searchController.dispose();
+    if (_isListening) {
+      _voiceService.stopListening();
+    }
     super.dispose();
+  }
+
+  Future<void> _toggleVoiceSearch() async {
+    if (_isListening) {
+      await _voiceService.stopListening();
+      if (mounted) setState(() => _isListening = false);
+    } else {
+      final available = await _voiceService.initialize();
+      if (!available) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Micrófono no disponible o permisos denegados'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+      if (mounted) setState(() => _isListening = true);
+      await _voiceService.startListening(
+        onResult: (words, isFinal) {
+          if (!mounted) return;
+          setState(() {
+            _searchController.text = words;
+            _searchQuery = words;
+            if (isFinal) {
+              _isListening = false;
+            }
+          });
+        },
+      );
+    }
   }
 
   List<String> _filterList(List<String> items) {
     if (_searchQuery.trim().isEmpty) return items;
     return items
-        .where((item) =>
-            item.toLowerCase().contains(_searchQuery.toLowerCase().trim()))
+        .where(
+          (item) =>
+              item.toLowerCase().contains(_searchQuery.toLowerCase().trim()),
+        )
         .toList();
   }
 
@@ -85,10 +127,12 @@ class _StickerPaletteSheetState extends State<StickerPaletteSheet> {
   Widget build(BuildContext context) {
     final estructuras = widget.catalogs['estructuras'] ?? [];
     final materiales = widget.catalogs['materiales'] ?? [];
-    final peligros = widget.catalogs['peligros'] ?? widget.catalogs['riesgos'] ?? [];
+    final peligros =
+        widget.catalogs['peligros'] ?? widget.catalogs['riesgos'] ?? [];
 
     return DefaultTabController(
       length: 3,
+      initialIndex: widget.initialTabIndex.clamp(0, 2),
       child: Container(
         height: MediaQuery.of(context).size.height * 0.72,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -114,7 +158,7 @@ class _StickerPaletteSheetState extends State<StickerPaletteSheet> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    widget.title ?? 'Seleccionar elemento desde Excel',
+                    widget.title ?? 'Seleccionar elemento',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 16,
@@ -131,32 +175,60 @@ class _StickerPaletteSheetState extends State<StickerPaletteSheet> {
             ),
             const SizedBox(height: 8),
 
-            // Buscador
+            // Buscador con micrófono integrado para búsqueda por voz
             TextField(
               controller: _searchController,
               onChanged: (val) => setState(() => _searchQuery = val),
               style: const TextStyle(color: Colors.white, fontSize: 13),
               decoration: InputDecoration(
-                hintText: 'Buscar material, estructura o peligro...',
-                hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
-                prefixIcon:
-                    const Icon(Icons.search, color: Color(0xFF38BDF8), size: 20),
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear, color: Colors.white54, size: 18),
+                hintText: _isListening
+                    ? 'Escuchando tu voz...'
+                    : 'Buscar o dictar por voz...',
+                hintStyle: TextStyle(
+                  color: _isListening ? const Color(0xFF38BDF8) : Colors.white38,
+                  fontSize: 13,
+                  fontWeight: _isListening ? FontWeight.bold : FontWeight.normal,
+                ),
+                prefixIcon: const Icon(
+                  Icons.search,
+                  color: Color(0xFF38BDF8),
+                  size: 20,
+                ),
+                suffixIcon: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_searchQuery.isNotEmpty)
+                      IconButton(
+                        icon: const Icon(
+                          Icons.clear,
+                          color: Colors.white54,
+                          size: 18,
+                        ),
                         onPressed: () {
                           _searchController.clear();
                           setState(() => _searchQuery = '');
                         },
-                      )
-                    : null,
+                      ),
+                    IconButton(
+                      icon: Icon(
+                        _isListening ? Icons.mic : Icons.mic_none,
+                        color: _isListening ? const Color(0xFFEF4444) : const Color(0xFF38BDF8),
+                        size: 20,
+                      ),
+                      tooltip: _isListening ? 'Detener escucha' : 'Búsqueda por voz',
+                      onPressed: _toggleVoiceSearch,
+                    ),
+                  ],
+                ),
                 filled: true,
                 fillColor: const Color(0xFF0F172A),
                 isDense: true,
                 contentPadding: const EdgeInsets.symmetric(vertical: 10),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
+                  borderSide: _isListening
+                      ? const BorderSide(color: Color(0xFF38BDF8), width: 1.5)
+                      : BorderSide.none,
                 ),
               ),
             ),
@@ -168,20 +240,22 @@ class _StickerPaletteSheetState extends State<StickerPaletteSheet> {
               indicatorWeight: 3,
               labelColor: const Color(0xFF38BDF8),
               unselectedLabelColor: Colors.white60,
-              labelStyle:
-                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              labelStyle: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
               tabs: [
                 Tab(
-                  icon: const Icon(Icons.foundation, size: 18),
+                  icon: const Icon(Icons.domain, size: 18),
                   text: 'Estructuras (${estructuras.length})',
                 ),
                 Tab(
-                  icon: const Icon(Icons.hardware, size: 18),
+                  icon: const Icon(Icons.construction, size: 18),
                   text: 'Materiales (${materiales.length})',
                 ),
                 Tab(
                   icon: const Icon(Icons.warning_amber_rounded, size: 18),
-                  text: 'Peligros (${peligros.length})',
+                  text: 'SSOMA (${peligros.length})',
                 ),
               ],
             ),
@@ -292,7 +366,8 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
   final GoogleSheetsService _sheetsService = GoogleSheetsService();
   final ImagePicker _imagePicker = ImagePicker();
 
-  final TransformationController _transformationController = TransformationController();
+  final TransformationController _transformationController =
+      TransformationController();
 
   CameraController? _cameraController;
   List<CameraDescription>? _cameras;
@@ -300,7 +375,8 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
   bool _cameraError = false;
 
   Uint8List? _capturedImageBytes;
-  double _imageAspectRatio = 9 / 16; // Proporción adaptable horizontal o vertical
+  double _imageAspectRatio =
+      9 / 16; // Proporción adaptable horizontal o vertical
   bool _isProcessing = false;
   final List<PlacedSticker> _placedStickers = [];
 
@@ -308,6 +384,9 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
   int _sessionPhotoNumber = 1;
   int _savedPhotosCount = 0;
   late final ProjectSessionModel _sessionModel;
+
+  // Reconocimiento de Voz y Asistente SSOMA IA
+  final VoiceRecognitionService _voiceService = VoiceRecognitionService();
 
   Map<String, List<String>> _catalogs = {
     'estructuras': TechnicalCatalogMatrix.defaultEstructuras,
@@ -349,7 +428,9 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
         setState(() {
           _imageAspectRatio = width / height;
         });
-        debugPrint('Dimensiones de foto calculadas: $width x $height (Ratio: $_imageAspectRatio)');
+        debugPrint(
+          'Dimensiones de foto calculadas: $width x $height (Ratio: $_imageAspectRatio)',
+        );
       }
     } catch (e) {
       debugPrint('Error al calcular relación de aspecto de la foto: $e');
@@ -434,21 +515,10 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
 
   @override
   void dispose() {
+    _voiceService.cancelListening();
     _cameraController?.dispose();
     _transformationController.dispose();
     super.dispose();
-  }
-
-  void _zoomIn() {
-    final Matrix4 current = _transformationController.value;
-    final Matrix4 copy = Matrix4.copy(current)..scaleByVector3(Vector3(1.4, 1.4, 1.0));
-    _transformationController.value = copy;
-  }
-
-  void _zoomOut() {
-    final Matrix4 current = _transformationController.value;
-    final Matrix4 copy = Matrix4.copy(current)..scaleByVector3(Vector3(0.714, 0.714, 1.0));
-    _transformationController.value = copy;
   }
 
   void _resetZoom() {
@@ -511,6 +581,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
 
   void _openStickerSelector({
     String? title,
+    int initialTabIndex = 0,
     Offset? initialPosition,
     PlacedSticker? existingPin,
   }) {
@@ -520,6 +591,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
       backgroundColor: Colors.transparent,
       builder: (ctx) => StickerPaletteSheet(
         title: title,
+        initialTabIndex: initialTabIndex,
         catalogs: _catalogs,
         onStickerSelected: (StickerModel sticker) {
           Navigator.pop(ctx);
@@ -554,7 +626,10 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
           children: [
             Icon(Icons.flag_circle, color: Color(0xFF10B981), size: 26),
             SizedBox(width: 10),
-            Text('¿Finalizar Proyecto?', style: TextStyle(color: Colors.white, fontSize: 18)),
+            Text(
+              '¿Finalizar Proyecto?',
+              style: TextStyle(color: Colors.white, fontSize: 18),
+            ),
           ],
         ),
         content: Text(
@@ -564,7 +639,10 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Continuar sesión', style: TextStyle(color: Colors.white54)),
+            child: const Text(
+              'Continuar sesión',
+              style: TextStyle(color: Colors.white54),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -582,13 +660,992 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
       await Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => ProjectSummaryReportScreen(session: _sessionModel),
+          builder: (context) =>
+              ProjectSummaryReportScreen(session: _sessionModel),
         ),
       );
       if (mounted) {
         Navigator.pop(context, true);
       }
     }
+  }
+
+  // ==========================================================================
+  // RECONOCIMIENTO Y BÚSQUEDA POR VOZ (MÓVIL & AUDÍFONOS/MANOS LIBRES BLUETOOTH)
+  // ==========================================================================
+
+  void _startVoiceRecognitionModal() async {
+    final availableMateriales =
+        _catalogs['materiales'] ?? TechnicalCatalogMatrix.defaultMateriales;
+    final availableEstructuras =
+        _catalogs['estructuras'] ?? TechnicalCatalogMatrix.defaultEstructuras;
+    final availablePeligros =
+        _catalogs['peligros'] ??
+        [
+          'Riesgo Eléctrico',
+          'Trabajo en Altura',
+          'Piso irregular / Objeto en el suelo',
+          'Falta de Señalización',
+          'Falta de Orden y Limpieza',
+        ];
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (modalCtx) {
+        String recognizedText = '';
+        VoiceCatalogMatchResult? matchResult;
+        bool isMicListening = false;
+
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            void startListeningInternal() async {
+              setModalState(() {
+                isMicListening = true;
+                recognizedText = 'Escuchando... Di los materiales, estructuras o peligros...';
+              });
+
+              final initialized = await _voiceService.initialize();
+              if (!initialized) {
+                setModalState(() {
+                  isMicListening = false;
+                  recognizedText = 'No se pudo acceder al micrófono. Verifica permisos o compatibilidad del dispositivo.';
+                });
+                return;
+              }
+
+              await _voiceService.startListening(
+                onResult: (words, isFinal) {
+                  setModalState(() {
+                    recognizedText = words;
+                    matchResult = VoiceRecognitionService.matchVoiceToCatalog(
+                      words,
+                      availableMateriales: availableMateriales,
+                      availableEstructuras: availableEstructuras,
+                      availablePeligros: availablePeligros,
+                    );
+                    if (isFinal) {
+                      isMicListening = false;
+                    }
+                  });
+                },
+              );
+            }
+
+            // Iniciar escucha automáticamente al abrir
+            if (!isMicListening && recognizedText.isEmpty) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                startListeningInternal();
+              });
+            }
+
+            final int totalMatches = matchResult?.totalMatches ?? 0;
+
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.75,
+              padding: const EdgeInsets.all(20),
+              decoration: const BoxDecoration(
+                color: Color(0xFF001F2F), // Azul Vigilarte
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: SafeArea(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 44,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 16),
+                        decoration: BoxDecoration(
+                          color: Colors.white24,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE3A51A)
+                                .withValues(alpha: 0.2),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.mic,
+                            color: Color(0xFFE3A51A),
+                            size: 24,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Búsqueda & Selección por Voz',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Text(
+                                'Micrófono del celular o Manos Libres Bluetooth',
+                                style: TextStyle(
+                                  color: Color(0xFF94A3B8),
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white54),
+                          onPressed: () {
+                            _voiceService.stopListening();
+                            Navigator.pop(modalCtx);
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Cuadro de texto reconocido en vivo
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0F172A),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: isMicListening
+                              ? const Color(0xFFE3A51A)
+                              : const Color(0xFF334155),
+                          width: isMicListening ? 1.5 : 1.0,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    isMicListening
+                                        ? Icons.hearing
+                                        : Icons.mic_off,
+                                    color: isMicListening
+                                        ? const Color(0xFFE3A51A)
+                                        : Colors.white38,
+                                    size: 16,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    isMicListening
+                                        ? 'Escuchando en vivo...'
+                                        : 'Escucha en pausa',
+                                    style: TextStyle(
+                                      color: isMicListening
+                                          ? const Color(0xFFE3A51A)
+                                          : Colors.white38,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (isMicListening)
+                                Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: const BoxDecoration(
+                                    color: Colors.redAccent,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            recognizedText.isEmpty
+                                ? 'Presiona el botón para hablar...'
+                                : '"$recognizedText"',
+                            style: TextStyle(
+                              color: recognizedText.isEmpty
+                                  ? Colors.white38
+                                  : Colors.white,
+                              fontSize: 13,
+                              fontStyle: recognizedText.isEmpty
+                                  ? FontStyle.italic
+                                  : FontStyle.normal,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Título de elementos reconocidos
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'ELEMENTOS IDENTIFICADOS',
+                          style: TextStyle(
+                            color: Color(0xFF38BDF8),
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF334155),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '$totalMatches coincidencia(s)',
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 10.5,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+
+                    // Chips de elementos encontrados
+                    Expanded(
+                      child: totalMatches == 0
+                          ? Center(
+                              child: Text(
+                                isMicListening
+                                    ? 'Di por ejemplo:\n"Concreto, tubería EMT de una pulgada y riesgo eléctrico"'
+                                    : 'No se detectaron coincidencias aún.\nToca el micrófono para hablar.',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: Colors.white38,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            )
+                          : SingleChildScrollView(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (matchResult!
+                                      .matchedEstructuras
+                                      .isNotEmpty) ...[
+                                    const Text(
+                                      'Estructuras:',
+                                      style: TextStyle(
+                                        color: Color(0xFF38BDF8),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 6,
+                                      children: matchResult!.matchedEstructuras
+                                          .map(
+                                            (e) => Chip(
+                                              avatar: const Icon(
+                                                Icons.foundation,
+                                                size: 14,
+                                                color: Color(0xFF38BDF8),
+                                              ),
+                                              label: Text(
+                                                e,
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 11,
+                                                ),
+                                              ),
+                                              backgroundColor: const Color(
+                                                0xFF1E293B,
+                                              ),
+                                              side: const BorderSide(
+                                                color: Color(0xFF38BDF8),
+                                              ),
+                                            ),
+                                          )
+                                          .toList(),
+                                    ),
+                                    const SizedBox(height: 12),
+                                  ],
+                                  if (matchResult!
+                                      .matchedMateriales
+                                      .isNotEmpty) ...[
+                                    const Text(
+                                      'Materiales / Canalización:',
+                                      style: TextStyle(
+                                        color: Color(0xFF4ADE80),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 6,
+                                      children: matchResult!.matchedMateriales
+                                          .map(
+                                            (m) => Chip(
+                                              avatar: const Icon(
+                                                Icons.hardware,
+                                                size: 14,
+                                                color: Color(0xFF4ADE80),
+                                              ),
+                                              label: Text(
+                                                m,
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 11,
+                                                ),
+                                              ),
+                                              backgroundColor: const Color(
+                                                0xFF14532D,
+                                              ),
+                                              side: const BorderSide(
+                                                color: Color(0xFF4ADE80),
+                                              ),
+                                            ),
+                                          )
+                                          .toList(),
+                                    ),
+                                    const SizedBox(height: 12),
+                                  ],
+                                  if (matchResult!
+                                      .matchedPeligros
+                                      .isNotEmpty) ...[
+                                    const Text(
+                                      'Peligros Identificados:',
+                                      style: TextStyle(
+                                        color: Color(0xFFFBBF24),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 6,
+                                      children: matchResult!.matchedPeligros
+                                          .map(
+                                            (p) => Chip(
+                                              avatar: const Icon(
+                                                Icons.warning_amber_rounded,
+                                                size: 14,
+                                                color: Color(0xFFFBBF24),
+                                              ),
+                                              label: Text(
+                                                p,
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 11,
+                                                ),
+                                              ),
+                                              backgroundColor: const Color(
+                                                0xFF7C2D12,
+                                              ),
+                                              side: const BorderSide(
+                                                color: Color(0xFFFBBF24),
+                                              ),
+                                            ),
+                                          )
+                                          .toList(),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Barra de acciones inferiores
+                    Row(
+                      children: [
+                        // Botón de reintentar / hablar
+                        IconButton(
+                          style: IconButton.styleFrom(
+                            backgroundColor: isMicListening
+                                ? Colors.redAccent
+                                : const Color(0xFF334155),
+                            padding: const EdgeInsets.all(12),
+                          ),
+                          icon: Icon(
+                            isMicListening ? Icons.stop : Icons.mic,
+                            color: Colors.white,
+                          ),
+                          tooltip: isMicListening
+                              ? 'Detener escucha'
+                              : 'Hablar de nuevo',
+                          onPressed: () {
+                            if (isMicListening) {
+                              _voiceService.stopListening();
+                              setModalState(() => isMicListening = false);
+                            } else {
+                              startListeningInternal();
+                            }
+                          },
+                        ),
+                        const SizedBox(width: 10),
+                        // Botón de inserción
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: totalMatches == 0
+                                ? null
+                                : () {
+                                    _voiceService.stopListening();
+                                    Navigator.pop(modalCtx);
+                                    _applyVoiceMatchResult(matchResult!);
+                                  },
+                            icon: const Icon(Icons.add_task),
+                            label: Text(
+                              'Insertar Pines Detectados ($totalMatches)',
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFE3A51A),
+                              foregroundColor: const Color(0xFF001F2F),
+                              disabledBackgroundColor: Colors.white12,
+                              disabledForegroundColor: Colors.white30,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              textStyle: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// Inserta de golpe los elementos reconocidos por voz, distribuyéndolos organizadamente en la foto
+  void _applyVoiceMatchResult(VoiceCatalogMatchResult result) {
+    setState(() {
+      int index = 0;
+
+      // Estructuras
+      for (final item in result.matchedEstructuras) {
+        final sticker = StickerModel.fromCatalog(
+          item,
+          StickerCategory.estructuras,
+        );
+        final offset = Offset(
+          80.0 + (index % 3) * 100.0,
+          160.0 + (index ~/ 3) * 70.0,
+        );
+        _placedStickers.add(
+          PlacedSticker(
+            id: '${DateTime.now().millisecondsSinceEpoch}_$index',
+            sticker: sticker,
+            position: offset,
+          ),
+        );
+        index++;
+      }
+
+      // Materiales
+      for (final item in result.matchedMateriales) {
+        final sticker = StickerModel.fromCatalog(
+          item,
+          StickerCategory.materiales,
+        );
+        final offset = Offset(
+          80.0 + (index % 3) * 100.0,
+          160.0 + (index ~/ 3) * 70.0,
+        );
+        _placedStickers.add(
+          PlacedSticker(
+            id: '${DateTime.now().millisecondsSinceEpoch}_$index',
+            sticker: sticker,
+            position: offset,
+          ),
+        );
+        index++;
+      }
+
+      // Peligros
+      for (final item in result.matchedPeligros) {
+        final sticker = StickerModel.fromCatalog(
+          item,
+          StickerCategory.peligros,
+        );
+        final offset = Offset(
+          80.0 + (index % 3) * 100.0,
+          160.0 + (index ~/ 3) * 70.0,
+        );
+        _placedStickers.add(
+          PlacedSticker(
+            id: '${DateTime.now().millisecondsSinceEpoch}_$index',
+            sticker: sticker,
+            position: offset,
+          ),
+        );
+        index++;
+      }
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '✓ ${result.totalMatches} pines agregados correctamente por voz.',
+        ),
+        backgroundColor: const Color(0xFF10B981),
+      ),
+    );
+  }
+
+  // ==========================================================================
+  // AGENTE AUDITOR SSOMA CON IA (LEY N° 29783, NORMA G.050, CNE SUMINISTRO)
+  // ==========================================================================
+
+  void _openSsomaAiWizard() async {
+    final estructurasTags = _placedStickers
+        .where((s) => s.sticker.category == StickerCategory.estructuras)
+        .map((s) => s.sticker.title)
+        .toList();
+
+    final materialesTags = _placedStickers
+        .where((s) => s.sticker.category == StickerCategory.materiales)
+        .map((s) => s.sticker.title)
+        .toList();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (modalCtx) {
+        bool isLoading = true;
+        List<SsomaHazardSuggestion> suggestions = [];
+        String? errorMessage;
+
+        return StatefulBuilder(
+          builder: (context, setWizardState) {
+            void loadAudit() async {
+              try {
+                final results = await SsomaAiService.auditScene(
+                  imageBytes: _capturedImageBytes,
+                  detectedMateriales: materialesTags,
+                  detectedEstructuras: estructurasTags,
+                  areaSector:
+                      'Foto #$_sessionPhotoNumber - ${widget.project.proyecto}',
+                );
+                if (modalCtx.mounted) {
+                  setWizardState(() {
+                    isLoading = false;
+                    suggestions = results;
+                  });
+                }
+              } catch (e) {
+                if (modalCtx.mounted) {
+                  setWizardState(() {
+                    isLoading = false;
+                    errorMessage = 'Error al ejecutar auditoría SSOMA: $e';
+                  });
+                }
+              }
+            }
+
+            if (isLoading && suggestions.isEmpty && errorMessage == null) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                loadAudit();
+              });
+            }
+
+            final approvedCount = suggestions.where((s) => s.isChecked).length;
+
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.85,
+              padding: const EdgeInsets.all(20),
+              decoration: const BoxDecoration(
+                color: Color(0xFF001F2F), // Azul institucional VIGILARTE
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: SafeArea(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 44,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 16),
+                        decoration: BoxDecoration(
+                          color: Colors.white24,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE3A51A),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(
+                            Icons.bolt,
+                            color: Color(0xFF001F2F),
+                            size: 24,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Auditor SSOMA con IA',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Text(
+                                'Ley 29783 • Norma G.050 • CNE Suministro',
+                                style: TextStyle(
+                                  color: Color(0xFFE3A51A),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white54),
+                          onPressed: () => Navigator.pop(modalCtx),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+
+                    if (isLoading)
+                      const Expanded(
+                        child: Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              CircularProgressIndicator(
+                                color: Color(0xFFE3A51A),
+                              ),
+                              SizedBox(height: 16),
+                              Text(
+                                'Auditando peligros en la escena...',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              SizedBox(height: 6),
+                              Text(
+                                'Evaluando riesgos de altura, contacto eléctrico y entorno laboral',
+                                style: TextStyle(
+                                  color: Colors.white60,
+                                  fontSize: 12,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    else if (errorMessage != null)
+                      Expanded(
+                        child: Center(
+                          child: Text(
+                            errorMessage!,
+                            style: const TextStyle(
+                              color: Colors.redAccent,
+                              fontSize: 13,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      )
+                    else
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0F172A),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: const Color(0xFF334155),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text(
+                                    'Peligros identificados para validación:',
+                                    style: TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 11.5,
+                                    ),
+                                  ),
+                                  Text(
+                                    '$approvedCount / ${suggestions.length} seleccionados',
+                                    style: const TextStyle(
+                                      color: Color(0xFFE3A51A),
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 11.5,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Expanded(
+                              child: ListView.builder(
+                                itemCount: suggestions.length,
+                                itemBuilder: (ctx, i) {
+                                  final item = suggestions[i];
+                                  final bool isVigilarte =
+                                      item.costResponsible == 'VIGILARTE';
+
+                                  return Container(
+                                    margin: const EdgeInsets.only(bottom: 10),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF0F172A),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: item.isChecked
+                                            ? const Color(0xFFE3A51A)
+                                            : const Color(0xFF334155),
+                                        width: item.isChecked ? 1.5 : 1.0,
+                                      ),
+                                    ),
+                                    child: CheckboxListTile(
+                                      activeColor: const Color(0xFFE3A51A),
+                                      checkColor: const Color(0xFF001F2F),
+                                      value: item.isChecked,
+                                      onChanged: (val) {
+                                        setWizardState(() {
+                                          item.isChecked = val ?? false;
+                                        });
+                                      },
+                                      title: Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              item.hazardName,
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 13,
+                                              ),
+                                            ),
+                                          ),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 6,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: isVigilarte
+                                                  ? const Color(0xFF0284C7)
+                                                        .withValues(alpha: 0.3)
+                                                  : const Color(0xFFD97706)
+                                                        .withValues(alpha: 0.3),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                              border: Border.all(
+                                                color: isVigilarte
+                                                    ? const Color(0xFF38BDF8)
+                                                    : const Color(0xFFFBBF24),
+                                              ),
+                                            ),
+                                            child: Text(
+                                              'Costo: ${item.costResponsible}',
+                                              style: TextStyle(
+                                                color: isVigilarte
+                                                    ? const Color(0xFF38BDF8)
+                                                    : const Color(0xFFFBBF24),
+                                                fontSize: 9,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      subtitle: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            item.riskDescription,
+                                            style: const TextStyle(
+                                              color: Color(0xFFCBD5E1),
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 6),
+                                          Row(
+                                            children: [
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 6,
+                                                      vertical: 2,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(
+                                                    0xFF1E293B,
+                                                  ),
+                                                  borderRadius:
+                                                      BorderRadius.circular(4),
+                                                ),
+                                                child: Text(
+                                                  'Jerarquía: ${item.hierarchyLevel}',
+                                                  style: const TextStyle(
+                                                    color: Color(0xFF4ADE80),
+                                                    fontSize: 9.5,
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: Text(
+                                                  item.technicalBasis,
+                                                  style: const TextStyle(
+                                                    color: Colors.white38,
+                                                    fontSize: 9.5,
+                                                  ),
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            'Medida: ${item.preventiveMeasure}',
+                                            style: const TextStyle(
+                                              color: Color(0xFF94A3B8),
+                                              fontSize: 10.5,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            ElevatedButton.icon(
+                              onPressed: approvedCount == 0
+                                  ? null
+                                  : () {
+                                      Navigator.pop(modalCtx);
+                                      _applySsomaSuggestions(
+                                        suggestions
+                                            .where((s) => s.isChecked)
+                                            .toList(),
+                                      );
+                                    },
+                              icon: const Icon(Icons.security, size: 20),
+                              label: Text(
+                                'Aprobar y Colocar ($approvedCount) Pines SSOMA',
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFFE3A51A),
+                                foregroundColor: const Color(0xFF001F2F),
+                                disabledBackgroundColor: Colors.white12,
+                                disabledForegroundColor: Colors.white30,
+                                minimumSize: const Size.fromHeight(48),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                textStyle: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// Aplica los peligros SSOMA auditados y aprobados por el usuario
+  void _applySsomaSuggestions(List<SsomaHazardSuggestion> approved) {
+    setState(() {
+      int index = 0;
+      for (final sug in approved) {
+        final sticker = StickerModel(
+          title: sug.hazardName,
+          icon: Icons.warning_amber_rounded,
+          backgroundColor: const Color(0xFF7C2D12),
+          accentColor: const Color(0xFFFBBF24),
+          category: StickerCategory.peligros,
+        );
+
+        final offset = Offset(
+          100.0 + (index % 3) * 90.0,
+          180.0 + (index ~/ 3) * 70.0,
+        );
+        _placedStickers.add(
+          PlacedSticker(
+            id: 'ssoma_${DateTime.now().millisecondsSinceEpoch}_$index',
+            sticker: sticker,
+            position: offset,
+          ),
+        );
+        index++;
+      }
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '✓ ${approved.length} peligros SSOMA auditados y añadidos a la foto.',
+        ),
+        backgroundColor: const Color(0xFF10B981),
+      ),
+    );
   }
 
   /// Muestra el Kit Técnico de Herramientas y Accesorios deducidos en tiempo real
@@ -640,7 +1697,11 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
               ),
               Row(
                 children: [
-                  const Icon(Icons.handyman, color: Color(0xFF38BDF8), size: 24),
+                  const Icon(
+                    Icons.handyman,
+                    color: Color(0xFF38BDF8),
+                    size: 24,
+                  ),
                   const SizedBox(width: 10),
                   const Expanded(
                     child: Text(
@@ -668,7 +1729,8 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                 child: ListView(
                   children: [
                     _buildKitSection(
-                      title: '🔩 Accesorios requeridos por Material (${accessories.length})',
+                      title:
+                          '🔩 Accesorios requeridos por Material (${accessories.length})',
                       color: const Color(0xFF10B981),
                       items: accessories,
                       emptyText: 'Coloca pines de Material (Canaletas, Tubo PVC/EMT, etc.) para vincular accesorios automáticamente.',
@@ -756,7 +1818,10 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                     e.value,
                     style: const TextStyle(color: Colors.white, fontSize: 11),
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 0,
+                  ),
                 );
               }).toList(),
             ),
@@ -775,14 +1840,17 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
 
     // 2. Renderizar la imagen combinada con los stickers a resolución completa garantizada (1549 x 2560)
     // Se captura ANTES de abrir el diálogo de sector para que el teclado en pantalla no comprima el viewport vertical
-    RenderRepaintBoundary? boundary = _repaintBoundaryKey.currentContext
-        ?.findRenderObject() as RenderRepaintBoundary?;
+    RenderRepaintBoundary? boundary =
+        _repaintBoundaryKey.currentContext?.findRenderObject()
+            as RenderRepaintBoundary?;
 
     if (boundary == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('No se pudo encontrar el contexto visual para renderizar.'),
+          content: Text(
+            'No se pudo encontrar el contexto visual para renderizar.',
+          ),
           backgroundColor: Colors.red,
         ),
       );
@@ -798,7 +1866,10 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
     if (!mounted) return;
 
     // Calcular escala optimizada HD (~1280 px) para sincronización ultra-rápida y reportes livianos
-    final double maxDimension = math.max(boundary.size.width, boundary.size.height);
+    final double maxDimension = math.max(
+      boundary.size.width,
+      boundary.size.height,
+    );
     final double targetRatio = (maxDimension > 0)
         ? (1280.0 / maxDimension).clamp(1.0, 2.0)
         : 1.5;
@@ -808,27 +1879,39 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
     try {
       // 2.1 Imagen completa para Gestor de Proyectos (todos los pines y metadata en formato liviano)
       ui.Image image = await boundary.toImage(pixelRatio: targetRatio);
-      ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      ByteData? byteData = await image.toByteData(
+        format: ui.ImageByteFormat.png,
+      );
       if (byteData == null) {
         throw Exception('Error al codificar imagen combinada en PNG.');
       }
       pngBytes = byteData.buffer.asUint8List();
       clientPngBytes = pngBytes; // Por defecto
-      debugPrint('Imagen optimizada capturada: ${image.width} x ${image.height} (${(pngBytes.lengthInBytes / 1024).toStringAsFixed(1)} KB)');
+      debugPrint(
+        'Imagen optimizada capturada: ${image.width} x ${image.height} (${(pngBytes.lengthInBytes / 1024).toStringAsFixed(1)} KB)',
+      );
 
       // 2.2 Imagen exclusiva para Cliente (SOLO marcadores de seguridad SST)
       final allStickersBackup = List<PlacedSticker>.from(_placedStickers);
-      final hasNonSafety = _placedStickers.any((s) => s.sticker.category != StickerCategory.peligros);
+      final hasNonSafety = _placedStickers.any(
+        (s) => s.sticker.category != StickerCategory.peligros,
+      );
       if (hasNonSafety) {
         setState(() {
-          _placedStickers.removeWhere((s) => s.sticker.category != StickerCategory.peligros);
+          _placedStickers.removeWhere(
+            (s) => s.sticker.category != StickerCategory.peligros,
+          );
         });
         await Future.delayed(const Duration(milliseconds: 30));
         ui.Image clientImg = await boundary.toImage(pixelRatio: targetRatio);
-        ByteData? clientBd = await clientImg.toByteData(format: ui.ImageByteFormat.png);
+        ByteData? clientBd = await clientImg.toByteData(
+          format: ui.ImageByteFormat.png,
+        );
         if (clientBd != null) {
           clientPngBytes = clientBd.buffer.asUint8List();
-          debugPrint('Imagen exclusiva de cliente SST capturada: ${clientImg.width} x ${clientImg.height}');
+          debugPrint(
+            'Imagen exclusiva de cliente SST capturada: ${clientImg.width} x ${clientImg.height}',
+          );
         }
         setState(() {
           _placedStickers.clear();
@@ -838,7 +1921,10 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al renderizar imagen: $e'), backgroundColor: Colors.red),
+        SnackBar(
+          content: Text('Error al renderizar imagen: $e'),
+          backgroundColor: Colors.red,
+        ),
       );
       return;
     }
@@ -855,11 +1941,19 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
-            const Icon(Icons.add_photo_alternate, color: Color(0xFF38BDF8), size: 24),
+            const Icon(
+              Icons.add_photo_alternate,
+              color: Color(0xFF38BDF8),
+              size: 24,
+            ),
             const SizedBox(width: 10),
             Text(
               'Guardar Foto #$_sessionPhotoNumber',
-              style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 17,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ],
         ),
@@ -869,7 +1963,11 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
           children: [
             Text(
               'Proyecto: ${widget.project.proyecto}',
-              style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600),
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 12),
             const Text(
@@ -882,7 +1980,8 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
               autofocus: true,
               style: const TextStyle(color: Colors.white, fontSize: 13),
               decoration: InputDecoration(
-                hintText: 'Ej. Fachada Principal (Defecto: Foto #$_sessionPhotoNumber)',
+                hintText:
+                    'Ej. Fachada Principal (Defecto: Foto #$_sessionPhotoNumber)',
                 hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
                 filled: true,
                 fillColor: const Color(0xFF0F172A),
@@ -890,7 +1989,10 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                   borderRadius: BorderRadius.circular(10),
                   borderSide: BorderSide.none,
                 ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
               ),
             ),
             const SizedBox(height: 14),
@@ -916,11 +2018,17 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                   const SizedBox(height: 4),
                   Text(
                     '🔩 Accesorios deducidos: ${TechnicalCatalogMatrix.deduceAccesorios(materiales: _placedStickers.where((s) => s.sticker.category == StickerCategory.materiales).map((s) => s.sticker.title)).length}',
-                    style: const TextStyle(color: Color(0xFF4ADE80), fontSize: 11),
+                    style: const TextStyle(
+                      color: Color(0xFF4ADE80),
+                      fontSize: 11,
+                    ),
                   ),
                   Text(
                     '🛠️ Herramientas deducidas: ${TechnicalCatalogMatrix.deduceHerramientas(estructuras: _placedStickers.where((s) => s.sticker.category == StickerCategory.estructuras).map((s) => s.sticker.title), materiales: _placedStickers.where((s) => s.sticker.category == StickerCategory.materiales).map((s) => s.sticker.title)).length}',
-                    style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 11),
+                    style: const TextStyle(
+                      color: Color(0xFF38BDF8),
+                      fontSize: 11,
+                    ),
                   ),
                 ],
               ),
@@ -930,7 +2038,10 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar', style: TextStyle(color: Colors.white54)),
+            child: const Text(
+              'Cancelar',
+              style: TextStyle(color: Colors.white54),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -953,11 +2064,11 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
     setState(() => _isProcessing = true);
 
     try {
-
       // 3. Almacenar la imagen en la carpeta designada del dispositivo móvil
       final Directory appDir = await getApplicationDocumentsDirectory();
-      final Directory designatedFolder =
-          Directory('${appDir.path}/${Constants.localFolderName}');
+      final Directory designatedFolder = Directory(
+        '${appDir.path}/${Constants.localFolderName}',
+      );
       if (!await designatedFolder.exists()) {
         await designatedFolder.create(recursive: true);
       }
@@ -968,9 +2079,12 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
       final String cleanArea = finalAreaSector
           .replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_')
           .trim();
-      final String timestamp =
-          DateTime.now().toIso8601String().replaceAll(RegExp(r'[^0-9]'), '');
-      final String localFileName = 'VISTE_${cleanContact}_Foto${_sessionPhotoNumber}_${cleanArea}_$timestamp.png';
+      final String timestamp = DateTime.now().toIso8601String().replaceAll(
+        RegExp(r'[^0-9]'),
+        '',
+      );
+      final String localFileName =
+          'VISTE_${cleanContact}_Foto${_sessionPhotoNumber}_${cleanArea}_$timestamp.png';
       final File localFile = File('${designatedFolder.path}/$localFileName');
       await localFile.writeAsBytes(pngBytes);
       final String localFilePath = localFile.path;
@@ -996,14 +2110,14 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
           .toList();
 
       // 5. Deducir herramientas y accesorios automáticamente (VISTEC V2)
-      final List<String> deducedHerramientas = TechnicalCatalogMatrix.deduceHerramientas(
-        estructuras: estructurasTags,
-        materiales: materialesTags,
-      );
+      final List<String> deducedHerramientas =
+          TechnicalCatalogMatrix.deduceHerramientas(
+            estructuras: estructurasTags,
+            materiales: materialesTags,
+          );
 
-      final List<String> deducedAccesorios = TechnicalCatalogMatrix.deduceAccesorios(
-        materiales: materialesTags,
-      );
+      final List<String> deducedAccesorios =
+          TechnicalCatalogMatrix.deduceAccesorios(materiales: materialesTags);
 
       // Registrar evidencia en la sesión consolidada (VISTEC V3)
       _sessionModel.addPhoto(
@@ -1056,7 +2170,11 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
             ),
             title: Row(
               children: [
-                const Icon(Icons.check_circle, color: Color(0xFF10B981), size: 28),
+                const Icon(
+                  Icons.check_circle,
+                  color: Color(0xFF10B981),
+                  size: 28,
+                ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
@@ -1085,7 +2203,8 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                   _buildDetailRow(
                     icon: Icons.table_chart,
                     label: 'Google Sheets ("Proyectos_Terreno"):',
-                    value: 'Foto #$_sessionPhotoNumber • Accesorios: ${deducedAccesorios.length} • Herramientas: ${deducedHerramientas.length}',
+                    value:
+                        'Foto #$_sessionPhotoNumber • Accesorios: ${deducedAccesorios.length} • Herramientas: ${deducedHerramientas.length}',
                   ),
                   const SizedBox(height: 8),
                   _buildDetailRow(
@@ -1118,7 +2237,10 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                 style: OutlinedButton.styleFrom(
                   foregroundColor: const Color(0xFF10B981),
                   side: const BorderSide(color: Color(0xFF10B981)),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
                 ),
                 icon: const Icon(Icons.flag, size: 18),
                 label: const Text('🏁 Finalizar Proyecto'),
@@ -1127,11 +2249,15 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                   await Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => ProjectSummaryReportScreen(session: _sessionModel),
+                      builder: (context) =>
+                          ProjectSummaryReportScreen(session: _sessionModel),
                     ),
                   );
                   if (mounted) {
-                    Navigator.pop(context, true); // Retorna a form_screen indicando fin de proyecto
+                    Navigator.pop(
+                      context,
+                      true,
+                    ); // Retorna a form_screen indicando fin de proyecto
                   }
                 },
               ),
@@ -1139,7 +2265,10 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF38BDF8),
                   foregroundColor: const Color(0xFF0F172A),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
@@ -1160,7 +2289,9 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                   });
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('Listo para capturar Foto #$_sessionPhotoNumber'),
+                      content: Text(
+                        'Listo para capturar Foto #$_sessionPhotoNumber',
+                      ),
                       backgroundColor: const Color(0xFF38BDF8),
                       duration: const Duration(seconds: 2),
                     ),
@@ -1173,7 +2304,9 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al sincronizar con Excel: ${syncResult.message}'),
+            content: Text(
+              'Error al sincronizar con Excel: ${syncResult.message}',
+            ),
             backgroundColor: Colors.red,
           ),
         );
@@ -1224,10 +2357,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                 const SizedBox(height: 2),
                 Text(
                   value,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                  ),
+                  style: const TextStyle(color: Colors.white, fontSize: 12),
                 ),
               ],
             ),
@@ -1263,19 +2393,27 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
         actions: [
           if (_sessionModel.totalPhotos > 0) ...[
             IconButton(
-              icon: const Icon(Icons.assessment_outlined, color: Color(0xFF38BDF8)),
+              icon: const Icon(
+                Icons.assessment_outlined,
+                color: Color(0xFF38BDF8),
+              ),
               tooltip: 'Ver Resumen y Reportes PDF',
               onPressed: () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => ProjectSummaryReportScreen(session: _sessionModel),
+                    builder: (context) =>
+                        ProjectSummaryReportScreen(session: _sessionModel),
                   ),
                 );
               },
             ),
             TextButton.icon(
-              icon: const Icon(Icons.flag_circle, color: Color(0xFF10B981), size: 18),
+              icon: const Icon(
+                Icons.flag_circle,
+                color: Color(0xFF10B981),
+                size: 18,
+              ),
               label: const Text(
                 'Finalizar',
                 style: TextStyle(
@@ -1294,12 +2432,51 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
           ),
           if (_capturedImageBytes != null) ...[
             IconButton(
-              icon: const Icon(Icons.rotate_right_rounded, color: Color(0xFF38BDF8)),
-              tooltip: 'Rotar foto 90° (Panorámica / Horizontal)',
+              icon: const Icon(Icons.bolt, color: Color(0xFFE3A51A), size: 22),
+              tooltip: 'Auditor SSOMA con IA (⚡)',
+              onPressed: _openSsomaAiWizard,
+            ),
+            IconButton(
+              icon: const Icon(Icons.handyman_outlined, color: Color(0xFF4ADE80), size: 20),
+              tooltip: 'Kit Técnico (Herramientas / Accesorios)',
+              onPressed: _showKitTecnicoSheet,
+            ),
+            IconButton(
+              icon: Stack(
+                alignment: Alignment.center,
+                children: [
+                  const Icon(
+                    Icons.rotate_90_degrees_cw_outlined,
+                    color: Color(0xFF38BDF8),
+                    size: 22,
+                  ),
+                  Positioned(
+                    bottom: 0,
+                    right: 0,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 2.5, vertical: 0.5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF001F2F),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: const Color(0xFF38BDF8), width: 0.8),
+                      ),
+                      child: const Text(
+                        '90°',
+                        style: TextStyle(
+                          fontSize: 8.5,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF38BDF8),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              tooltip: 'Girar foto 90°',
               onPressed: _isProcessing ? null : _rotateCapturedImage,
             ),
             IconButton(
-              icon: const Icon(Icons.refresh, color: Colors.amberAccent),
+              icon: const Icon(Icons.camera_alt_outlined, color: Colors.amberAccent, size: 22),
               tooltip: 'Tomar otra foto con la cámara',
               onPressed: () {
                 setState(() {
@@ -1350,8 +2527,10 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF38BDF8),
                   foregroundColor: const Color(0xFF0F172A),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 12,
+                  ),
                 ),
               ),
             ],
@@ -1502,14 +2681,18 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                                 details.localPosition.dy,
                               );
                               _openStickerSelector(
-                                title: 'Añadir Pin #${_placedStickers.length + 1}',
+                                title:
+                                    'Añadir Pin #${_placedStickers.length + 1}',
                                 initialPosition: tapPosition,
                               );
                             },
                             child: Stack(
                               fit: StackFit.expand,
                               children: [
-                                Image.memory(_capturedImageBytes!, fit: BoxFit.fill),
+                                Image.memory(
+                                  _capturedImageBytes!,
+                                  fit: BoxFit.fill,
+                                ),
 
                                 // Marca de agua técnica ultra-compacta (mínima altura y fuentes pequeñas)
                                 Positioned(
@@ -1521,15 +2704,19 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                                       vertical: 2.5,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: Colors.black.withValues(alpha: 0.75),
+                                      color: Colors.black.withValues(
+                                        alpha: 0.75,
+                                      ),
                                       borderRadius: BorderRadius.circular(4),
                                       border: Border.all(
-                                        color: const Color(0xFF38BDF8).withValues(alpha: 0.7),
+                                        color: const Color(0xFF38BDF8)
+                                            .withValues(alpha: 0.7),
                                         width: 0.6,
                                       ),
                                     ),
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
                                         Row(
@@ -1561,7 +2748,9 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                                             height: 1.0,
                                           ),
                                         ),
-                                        if (widget.project.mapa.isNotEmpty && widget.project.mapa != '0.0, 0.0') ...[
+                                        if (widget.project.mapa.isNotEmpty &&
+                                            widget.project.mapa !=
+                                                '0.0, 0.0') ...[
                                           const SizedBox(height: 0.5),
                                           Text(
                                             'GPS: ${widget.project.mapa}',
@@ -1583,152 +2772,242 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                                   _buildNumberedPin(_placedStickers[i], i),
 
                                 // Leyenda técnica ultra-compacta y translúcida al pie de la imagen
-                                if (_placedStickers.isNotEmpty)
-                                  Positioned(
-                                    bottom: 5,
-                                    left: 5,
-                                    right: 5,
-                                    child: _buildInPhotoTranslucentLegend(),
-                                  ),
-                              ],
+                                  if (_placedStickers.isNotEmpty)
+                                    Positioned(
+                                      bottom: 5,
+                                      left: 5,
+                                      right: 5,
+                                      child: _buildInPhotoTranslucentLegend(),
+                                    ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-
-                  // Controles flotantes de Zoom en la esquina superior derecha
-                  Positioned(
-                    top: 12,
-                    right: 12,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.8),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFF38BDF8), width: 1),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.zoom_in, color: Color(0xFF38BDF8), size: 22),
-                            tooltip: 'Acercar imagen (+)',
-                            onPressed: _zoomIn,
-                            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                            padding: EdgeInsets.zero,
-                          ),
-                          Container(width: 1, height: 18, color: Colors.white24),
-                          IconButton(
-                            icon: const Icon(Icons.zoom_out, color: Color(0xFF38BDF8), size: 22),
-                            tooltip: 'Alejar imagen (-)',
-                            onPressed: _zoomOut,
-                            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                            padding: EdgeInsets.zero,
-                          ),
-                          Container(width: 1, height: 18, color: Colors.white24),
-                          IconButton(
-                            icon: const Icon(Icons.center_focus_strong, color: Colors.white70, size: 20),
-                            tooltip: 'Restablecer zoom (1x)',
-                            onPressed: _resetZoom,
-                            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                            padding: EdgeInsets.zero,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
-        ),
 
-        // Barra inferior de controles
+        // Barra inferior de controles (Diseño en 2 niveles: 4 Botones + Botón Guardar Fijo)
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
           decoration: const BoxDecoration(
             color: Color(0xFF1E293B),
             borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
           ),
           child: SafeArea(
             top: false,
-            child: Row(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                // Botón Añadir Pin
-                ElevatedButton.icon(
-                  onPressed: () => _openStickerSelector(
-                    title: 'Añadir Pin #${_placedStickers.length + 1}',
-                  ),
-                  icon: const Icon(Icons.add_location_alt_outlined, size: 18),
-                  label: const Text('Pin'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF334155),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 12,
+                // Nivel 1: Los 4 Botones de Colocación de Pines y Agente IA por Voz
+                Row(
+                  children: [
+                    // 1. Estructuras (Ícono de estructura, Azul)
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => _openStickerSelector(
+                          title: 'Estructuras',
+                          initialTabIndex: 0,
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0F2744),
+                          foregroundColor: const Color(0xFF00B0FF),
+                          side: const BorderSide(color: Color(0xFF00B0FF), width: 1.2),
+                          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        child: const Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.domain, size: 18, color: Color(0xFF00B0FF)),
+                            SizedBox(height: 2),
+                            Text(
+                              'Estructuras',
+                              style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 6),
+                    const SizedBox(width: 5),
 
-                // Botón Kit Técnico
-                ElevatedButton.icon(
-                  onPressed: _showKitTecnicoSheet,
-                  icon: const Icon(Icons.handyman_outlined, size: 18, color: Color(0xFF38BDF8)),
-                  label: const Text('Kit', style: TextStyle(color: Color(0xFF38BDF8))),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF0F172A),
-                    side: const BorderSide(color: Color(0xFF38BDF8), width: 1),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 12,
+                    // 2. Materiales (Ícono de martillo y destornillador, Verde)
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => _openStickerSelector(
+                          title: 'Materiales',
+                          initialTabIndex: 1,
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0C381E),
+                          foregroundColor: const Color(0xFF00E676),
+                          side: const BorderSide(color: Color(0xFF00E676), width: 1.2),
+                          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        child: const Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.construction, size: 18, color: Color(0xFF00E676)),
+                            SizedBox(height: 2),
+                            Text(
+                              'Materiales',
+                              style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                    const SizedBox(width: 5),
+
+                    // 3. SSOMA (Ícono de triángulo con signo de advertencia, Amarillo)
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => _openStickerSelector(
+                          title: 'Peligros SSOMA',
+                          initialTabIndex: 2,
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF382D05),
+                          foregroundColor: const Color(0xFFFFD600),
+                          side: const BorderSide(color: Color(0xFFFFD600), width: 1.2),
+                          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        child: const Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.warning_amber_rounded, size: 18, color: Color(0xFFFFD600)),
+                            SizedBox(height: 2),
+                            Text(
+                              'SSOMA',
+                              style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-                const SizedBox(width: 6),
+                    const SizedBox(width: 5),
 
-                // Botón Cargar otra foto de la memoria
-                IconButton(
-                  icon: const Icon(Icons.photo_library, color: Colors.white70, size: 22),
-                  tooltip: 'Cargar otra foto de la memoria (Galería)',
-                  onPressed: _pickFromGallery,
+                    // 4. Agente IA (Micrófono + Rayo, Vigilarte #001F2F / #E3A51A)
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: _startVoiceRecognitionModal,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF001F2F),
+                          foregroundColor: const Color(0xFFE3A51A),
+                          side: const BorderSide(color: Color(0xFFE3A51A), width: 1.4),
+                          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        child: const Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.mic, size: 16, color: Color(0xFFE3A51A)),
+                                Icon(Icons.bolt, size: 16, color: Color(0xFFE3A51A)),
+                              ],
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              'Agente IA',
+                              style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFFE3A51A)),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                const Spacer(),
+                const SizedBox(height: 8),
 
-                // Botón Guardar y Sincronizar
-                ElevatedButton.icon(
-                  onPressed: _isProcessing ? null : _saveAndSyncEvidence,
-                  icon: _isProcessing
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
+                // Nivel 2: Fila Principal de Guardado y Avance (FIJA, SIEMPRE VISIBLE EN PANTALLA)
+                Row(
+                  children: [
+                    // Botón Guardar Foto Actual y Avanzar
+                    Expanded(
+                      flex: 3,
+                      child: SizedBox(
+                        height: 46,
+                        child: ElevatedButton.icon(
+                          onPressed: _isProcessing ? null : _saveAndSyncEvidence,
+                          icon: _isProcessing
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Icon(Icons.cloud_upload, size: 20),
+                          label: Text(
+                            _isProcessing
+                                ? 'Guardando...'
+                                : 'Guardar Foto #$_sessionPhotoNumber',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
                           ),
-                        )
-                      : const Icon(Icons.cloud_upload),
-                  label: Text(
-                    _isProcessing ? 'Guardando...' : 'Guardar Foto #$_sessionPhotoNumber',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF10B981),
-                    foregroundColor: Colors.white,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF10B981),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            elevation: 2,
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
+
+                    // Si ya hay fotos guardadas en la sesión, botón directo para Finalizar / Ver Reportes
+                    if (_sessionModel.totalPhotos > 0) ...[
+                      const SizedBox(width: 8),
+                      Expanded(
+                        flex: 2,
+                        child: SizedBox(
+                          height: 46,
+                          child: ElevatedButton.icon(
+                            onPressed: _confirmEndSession,
+                            icon: const Icon(Icons.flag_circle, size: 18, color: Colors.white),
+                            label: Text(
+                              'Reportes (${_sessionModel.totalPhotos})',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12.5,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF0284C7),
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              elevation: 2,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ],
             ),
@@ -1745,7 +3024,9 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
       case StickerCategory.materiales:
         return const Color(0xFF00E676); // Verde neón ultra-vibrante
       case StickerCategory.peligros:
-        return const Color(0xFFFFD600); // Amarillo seguridad eléctrico y vibrante
+        return const Color(
+          0xFFFFD600,
+        ); // Amarillo seguridad eléctrico y vibrante
     }
   }
 
@@ -1760,8 +3041,12 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
           height: 16,
           child: CustomPaint(
             painter: WarningTrianglePainter(
-              fillColor: const Color(0x35FFD600), // ~20% de opacidad: se ve completamente la estructura detrás
-              borderColor: const Color(0xFFFFD600), // Borde amarillo eléctrico de máxima visibilidad
+              fillColor: const Color(
+                0x35FFD600,
+              ), // ~20% de opacidad: se ve completamente la estructura detrás
+              borderColor: const Color(
+                0xFFFFD600,
+              ), // Borde amarillo eléctrico de máxima visibilidad
               borderWidth: 1.3,
             ),
             child: Padding(
@@ -1791,10 +3076,14 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
           width: 14,
           height: 14,
           decoration: BoxDecoration(
-            color: const Color(0x3000B0FF), // ~19% de opacidad: cristalino sin fondo opaco
+            color: const Color(
+              0x3000B0FF,
+            ), // ~19% de opacidad: cristalino sin fondo opaco
             borderRadius: BorderRadius.circular(2.5),
             border: Border.all(
-              color: const Color(0xFF00B0FF), // Borde azul eléctrico de alto impacto
+              color: const Color(
+                0xFF00B0FF,
+              ), // Borde azul eléctrico de alto impacto
               width: 1.3,
             ),
           ),
@@ -1821,7 +3110,9 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
           width: 14,
           height: 14,
           decoration: BoxDecoration(
-            color: const Color(0x3000E676), // ~19% de opacidad: cristalino sin fondo opaco
+            color: const Color(
+              0x3000E676,
+            ), // ~19% de opacidad: cristalino sin fondo opaco
             shape: BoxShape.circle,
             border: Border.all(
               color: const Color(0xFF00E676), // Borde verde neón ultra-vibrante
@@ -1945,7 +3236,8 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
           width: 36,
           height: 36,
           alignment: Alignment.center,
-          color: Colors.transparent, // Zona táctil de comodidad sin bordes rígidos
+          color:
+              Colors.transparent, // Zona táctil de comodidad sin bordes rígidos
           child: _buildPinBadge(placed.sticker.category, index + 1),
         ),
       ),
@@ -1954,11 +3246,12 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
 
   void _showPinOptionsModal(PlacedSticker placed, int index) {
     final Color categoryColor = _getCategoryColor(placed.sticker.category);
-    final String categoryName = placed.sticker.category == StickerCategory.estructuras
+    final String categoryName =
+        placed.sticker.category == StickerCategory.estructuras
         ? 'Estructura'
         : (placed.sticker.category == StickerCategory.materiales
-            ? 'Material'
-            : 'Peligro SST');
+              ? 'Material'
+              : 'Peligro SST');
 
     showModalBottomSheet(
       context: context,
@@ -2056,7 +3349,11 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                     ),
                   );
                 },
-                icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 22),
+                icon: const Icon(
+                  Icons.delete_outline,
+                  color: Colors.redAccent,
+                  size: 22,
+                ),
                 label: const Text(
                   'Eliminar este Pin',
                   style: TextStyle(
@@ -2100,7 +3397,9 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2.5),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.48), // Fondo translúcido para visibilidad
+        color: Colors.black.withValues(
+          alpha: 0.48,
+        ), // Fondo translúcido para visibilidad
         borderRadius: BorderRadius.circular(5),
         border: Border.all(
           color: Colors.white.withValues(alpha: 0.22),
@@ -2113,7 +3412,11 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
         children: [
           Row(
             children: [
-              const Icon(Icons.format_list_bulleted, color: Color(0xFF38BDF8), size: 9),
+              const Icon(
+                Icons.format_list_bulleted,
+                color: Color(0xFF38BDF8),
+                size: 9,
+              ),
               const SizedBox(width: 3),
               Text(
                 'PINES RELEVADOS (${_placedStickers.length})',
@@ -2158,7 +3461,8 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
 
           // 3. Estructuras (■ Cuadrados Azules)
           if (structPins.isNotEmpty) ...[
-            if (sstPins.isNotEmpty || matPins.isNotEmpty) const SizedBox(height: 1.2),
+            if (sstPins.isNotEmpty || matPins.isNotEmpty)
+              const SizedBox(height: 1.2),
             _buildInPhotoCategoryChipsRow(
               categoryColor: const Color(0xFF00B0FF),
               pins: structPins,
@@ -2244,10 +3548,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
           decoration: BoxDecoration(
             color: const Color(0xFF00B0FF),
             borderRadius: BorderRadius.circular(2),
-            border: Border.all(
-              color: Colors.white,
-              width: 0.6,
-            ),
+            border: Border.all(color: Colors.white, width: 0.6),
           ),
           child: Center(
             child: Text(
@@ -2269,10 +3570,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
           decoration: BoxDecoration(
             color: const Color(0xFF00E676),
             shape: BoxShape.circle,
-            border: Border.all(
-              color: Colors.white,
-              width: 0.6,
-            ),
+            border: Border.all(color: Colors.white, width: 0.6),
           ),
           child: Center(
             child: Text(

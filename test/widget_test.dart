@@ -5,8 +5,10 @@
 // gestures. You can also use WidgetTester to find child widgets in the widget
 // tree, read text, and verify that the values of widget properties are correct.
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vistec/main.dart';
+import 'package:vistec/views/form_screen.dart';
 import 'package:vistec/models/sticker_model.dart';
 
 void main() {
@@ -17,7 +19,15 @@ void main() {
     // Verify that the welcome screen actions and password field are present
     expect(find.text('Mis proyectos'), findsOneWidget);
     expect(find.text('Buscar proyectos'), findsOneWidget);
-    expect(find.text('Registrar proyecto'), findsOneWidget);
+    expect(find.byType(TextField), findsOneWidget);
+
+    // Enter VGL into password field - auto-navigates to FormScreen
+    await tester.enterText(find.byType(TextField), 'VGL');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+
+    // Verify navigation to FormScreen
+    expect(find.byType(FormScreen), findsOneWidget);
   });
 
   test('TechnicalCatalogMatrix deduces prioritized tools and accessories', () {

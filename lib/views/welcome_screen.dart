@@ -4,10 +4,9 @@ import 'package:url_launcher/url_launcher.dart';
 import 'form_screen.dart';
 import 'project_history_screen.dart';
 
-/// Pantalla de Bienvenida VISTEC con Tarjeta Digital de Presentación
+/// Pantalla de Bienvenida VISTE con Tarjeta Digital de Presentación
 /// Proporciones nativas sin distorsión vertical y distribución de controles:
-/// [ Mis proyectos ] [ Clave debajo del QR ] [ Buscar proyectos ]
-/// [             Registrar proyecto (debajo de los 3)           ]
+/// [ Mis proyectos ] [ Clave debajo del QR (Acceso directo con VGL) ] [ Buscar proyectos ]
 class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({super.key});
 
@@ -45,6 +44,21 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
         _isKeyValid = isValid;
       });
     }
+    if (isValid) {
+      _navigateToFormScreen();
+    }
+  }
+
+  void _navigateToFormScreen() {
+    FocusScope.of(context).unfocus();
+    _passwordController.clear();
+    setState(() {
+      _isKeyValid = false;
+    });
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const FormScreen()),
+    );
   }
 
   Future<void> _launchExternalUrl(String urlString) async {
@@ -59,17 +73,9 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   }
 
   void _onRegisterProject() {
-    FocusScope.of(context).unfocus();
     final input = _passwordController.text.trim().toUpperCase();
-
     if (input == _authorizedKey) {
-      setState(() {
-        _isKeyValid = true;
-      });
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => const FormScreen()),
-      );
+      _navigateToFormScreen();
     } else {
       _passwordFocusNode.requestFocus();
       ScaffoldMessenger.of(context).showSnackBar(
@@ -80,7 +86,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'Acceso restringido. Ingrese la clave autorizada (VGL) para registrar proyectos.',
+                  'Acceso restringido. Ingrese la clave autorizada (VGL) para acceder directamente.',
                   style: TextStyle(color: Colors.white, fontSize: 13),
                 ),
               ),
@@ -159,15 +165,14 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                           borderRadius: BorderRadius.circular(16),
                           splashColor: const Color(0xFF25D366).withValues(alpha: 0.25),
                           onTap: () => _launchExternalUrl(
-                            'https://wa.me/51955281424?text=Hola%20Fedor,%20te%20contacto%20desde%20la%20app%20VISTEC',
+                            'https://wa.me/51955281424?text=Hola%20Fedor,%20te%20contacto%20desde%20la%20app%20VISTE',
                           ),
                         ),
                       ),
                     ),
 
                     // 3. Distribución de controles en la zona blanca intermedia
-                    // a) Mis proyectos (Izquierda) | b) Clave debajo del QR (Centro) | c) Buscar proyectos (Derecha)
-                    // d) Registrar proyecto (Debajo de los 3 anteriores)
+                    // a) Mis proyectos (Izquierda) | b) Clave debajo del QR con acceso directo (Centro) | c) Buscar proyectos (Derecha)
                     Positioned(
                       top: verticalOffset + (naturalContentHeight * 0.366),
                       left: 16,
@@ -328,40 +333,6 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                                 ),
                               ),
                             ],
-                          ),
-
-                          const SizedBox(height: 10),
-
-                          // d) Botón "Registrar proyecto" debajo de los primeros 3 (ACCIÓN PRINCIPAL RESALTADA: AMARILLO #E3A51A)
-                          SizedBox(
-                            width: double.infinity,
-                            height: 46,
-                            child: ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFFE3A51A), // COLOR 02 AMARILLO VIGILARTE (RESALTA)
-                                foregroundColor: const Color(0xFF001F2F), // COLOR 01 AZUL VIGILARTE
-                                elevation: 3,
-                                shadowColor: const Color(0xFFE3A51A).withValues(alpha: 0.45),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                              ),
-                              icon: const Icon(
-                                Icons.add_circle_outline_rounded,
-                                size: 19,
-                                color: Color(0xFF001F2F),
-                              ),
-                              label: const Text(
-                                'Registrar proyecto',
-                                style: TextStyle(
-                                  fontSize: 14.5,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF001F2F),
-                                  letterSpacing: 0.3,
-                                ),
-                              ),
-                              onPressed: _onRegisterProject,
-                            ),
                           ),
                         ],
                       ),

@@ -45,6 +45,7 @@ dependencies:
   printing: ^5.15.0
   image: ^4.10.1
   url_launcher: ^6.3.2
+  speech_to_text: ^7.5.0
 
 dev_dependencies:
   flutter_test:

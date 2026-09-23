@@ -241,6 +241,34 @@ class ProjectSessionModel {
     return list;
   }
 
+  /// Obtiene los accesorios con su frecuencia y distribución en fotos
+  List<ItemFrequency> getAccessoriesWithFrequency() {
+    final Map<String, int> counts = {};
+    final Map<String, List<String>> areaMap = {};
+
+    for (final photo in photos) {
+      for (final acc in photo.accesorios) {
+        counts[acc] = (counts[acc] ?? 0) + 1;
+        areaMap.putIfAbsent(acc, () => []);
+        if (!areaMap[acc]!.contains(photo.areaSector)) {
+          areaMap[acc]!.add(photo.areaSector);
+        }
+      }
+    }
+
+    final List<ItemFrequency> items = counts.entries.map((e) {
+      return ItemFrequency(
+        name: e.key,
+        count: e.value,
+        totalPhotos: totalPhotos,
+        areas: areaMap[e.key] ?? [],
+      );
+    }).toList();
+
+    items.sort((a, b) => b.count.compareTo(a.count));
+    return items;
+  }
+
   /// Obtiene peligros identificados agrupados por área o sector
   Map<String, List<String>> getHazardsByArea() {
     final Map<String, List<String>> result = {};
