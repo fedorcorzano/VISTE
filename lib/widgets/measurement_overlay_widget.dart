@@ -3,15 +3,18 @@ import 'package:flutter/material.dart';
 import '../models/linear_measurement_model.dart';
 import '../services/voice_recognition_service.dart';
 
-/// Painter de alta fidelidad para dibujar cotas de ingeniería técnica sobre la fotografía
+/// Painter de ingeniería técnica que dibuja cotas con flechas de dos puntas (<------>),
+/// puntos de anclaje de alta precisión y manijas interactivas de ajuste milimétrico A (Origen) y B (Destino).
 class MeasurementLinesPainter extends CustomPainter {
   final List<LinearMeasurement> measurements;
+  final String? selectedMeasurementId;
   final Offset? currentStart;
   final Offset? currentEnd;
   final String? activeMaterial;
 
   MeasurementLinesPainter({
     required this.measurements,
+    this.selectedMeasurementId,
     this.currentStart,
     this.currentEnd,
     this.activeMaterial,
@@ -20,13 +23,17 @@ class MeasurementLinesPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     // 1. Dibujar todas las cotas finalizadas
-    for (final m in measurements) {
-      _drawDimensionLine(
+    for (int i = 0; i < measurements.length; i++) {
+      final m = measurements[i];
+      final bool isSelected = m.id == selectedMeasurementId;
+
+      _drawDimensionArrow(
         canvas: canvas,
         start: m.startOffset,
         end: m.endOffset,
-        label: m.labelFormatted,
+        label: '#${i + 1} • ${m.labelFormatted}',
         isTemp: false,
+        isSelected: isSelected,
       );
     }
 
@@ -36,38 +43,27 @@ class MeasurementLinesPainter extends CustomPainter {
       final double dy = currentEnd!.dy - currentStart!.dy;
       final double pixelDistance = math.sqrt(dx * dx + dy * dy);
 
-      if (pixelDistance > 10) {
-        _drawDimensionLine(
+      if (pixelDistance > 5) {
+        _drawDimensionArrow(
           canvas: canvas,
           start: currentStart!,
           end: currentEnd!,
           label: activeMaterial != null ? 'Trazando • $activeMaterial' : 'Ajustando cota...',
           isTemp: true,
+          isSelected: true,
         );
       }
     }
   }
 
-  void _drawDimensionLine({
+  void _drawDimensionArrow({
     required Canvas canvas,
     required Offset start,
     required Offset end,
     required String label,
     required bool isTemp,
+    required bool isSelected,
   }) {
-    final Color strokeColor = isTemp ? const Color(0xFF38BDF8) : const Color(0xFFE3A51A); // Azul en temp, Amarillo en fija
-    final Color bgColor = const Color(0xFF001F2F).withValues(alpha: 0.90);
-
-    final Paint linePaint = Paint()
-      ..color = strokeColor
-      ..strokeWidth = isTemp ? 2.5 : 2.2
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
-
-    // Línea principal
-    canvas.drawLine(start, end, linePaint);
-
-    // Calcular vector unitario y perpendicular
     final double dx = end.dx - start.dx;
     final double dy = end.dy - start.dy;
     final double len = math.sqrt(dx * dx + dy * dy);
@@ -78,40 +74,104 @@ class MeasurementLinesPainter extends CustomPainter {
     final double perpX = -uY;
     final double perpY = uX;
 
-    // Dibujar topes perpendiculares (ticks) en los extremos
-    const double tickLen = 9.0;
-    final Paint tickPaint = Paint()
-      ..color = strokeColor
-      ..strokeWidth = 2.4
+    final Color strokeColor = isTemp
+        ? const Color(0xFF38BDF8)
+        : (isSelected ? const Color(0xFF00E676) : const Color(0xFFE3A51A)); // Verde esmeralda si seleccionada, dorado vigilarte por defecto
+    final Color bgColor = const Color(0xFF001F2F).withValues(alpha: 0.92);
+
+    // 1. Sombra posterior oscura para máximo contraste sobre fotos claras o reflectivas
+    final Paint shadowLine = Paint()
+      ..color = Colors.black.withValues(alpha: 0.85)
+      ..strokeWidth = (isSelected ? 3.4 : 2.6) + 1.8
+      ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
+    canvas.drawLine(start, end, shadowLine);
 
-    // Tick en Inicio
-    canvas.drawLine(
-      Offset(start.dx + perpX * tickLen, start.dy + perpY * tickLen),
-      Offset(start.dx - perpX * tickLen, start.dy - perpY * tickLen),
-      tickPaint,
-    );
-    // Tick en Fin
-    canvas.drawLine(
-      Offset(end.dx + perpX * tickLen, end.dy + perpY * tickLen),
-      Offset(end.dx - perpX * tickLen, end.dy - perpY * tickLen),
-      tickPaint,
-    );
+    // 2. Línea principal de cota
+    final Paint linePaint = Paint()
+      ..color = strokeColor
+      ..strokeWidth = isSelected ? 3.0 : 2.4
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(start, end, linePaint);
 
-    // Puntos de anclaje (círculos) en los extremos
-    final Paint pointPaint = Paint()
+    // 3. Flechas de dos puntas de ingeniería (<--------->)
+    const double arrowLen = 13.5;
+    const double arrowHalfWidth = 5.2;
+
+    final Paint arrowPaint = Paint()
       ..color = strokeColor
       ..style = PaintingStyle.fill;
-    canvas.drawCircle(start, 3.5, pointPaint);
-    canvas.drawCircle(end, 3.5, pointPaint);
+    final Paint arrowBorder = Paint()
+      ..color = Colors.black.withValues(alpha: 0.9)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
 
-    // Etiqueta central con texto de metrado y material
+    // Flecha Punta A (Origen: apunta exactamente al contacto del punto start)
+    final Path startArrow = Path()
+      ..moveTo(start.dx, start.dy)
+      ..lineTo(
+        start.dx + uX * arrowLen + perpX * arrowHalfWidth,
+        start.dy + uY * arrowLen + perpY * arrowHalfWidth,
+      )
+      ..lineTo(
+        start.dx + uX * (arrowLen * 0.75),
+        start.dy + uY * (arrowLen * 0.75),
+      )
+      ..lineTo(
+        start.dx + uX * arrowLen - perpX * arrowHalfWidth,
+        start.dy + uY * arrowLen - perpY * arrowHalfWidth,
+      )
+      ..close();
+    canvas.drawPath(startArrow, arrowPaint);
+    canvas.drawPath(startArrow, arrowBorder);
+
+    // Flecha Punta B (Destino: apunta exactamente al contacto del punto end)
+    final Path endArrow = Path()
+      ..moveTo(end.dx, end.dy)
+      ..lineTo(
+        end.dx - uX * arrowLen + perpX * arrowHalfWidth,
+        end.dy - uY * arrowLen + perpY * arrowHalfWidth,
+      )
+      ..lineTo(
+        end.dx - uX * (arrowLen * 0.75),
+        end.dy - uY * (arrowLen * 0.75),
+      )
+      ..lineTo(
+        end.dx - uX * arrowLen - perpX * arrowHalfWidth,
+        end.dy - uY * arrowLen - perpY * arrowHalfWidth,
+      )
+      ..close();
+    canvas.drawPath(endArrow, arrowPaint);
+    canvas.drawPath(endArrow, arrowBorder);
+
+    // 4. Puntos de contacto milimétricos (centro de coordenadas)
+    final Paint centerDotPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+    final Paint centerDotBorder = Paint()
+      ..color = Colors.black
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2;
+
+    canvas.drawCircle(start, 2.5, centerDotPaint);
+    canvas.drawCircle(start, 2.5, centerDotBorder);
+    canvas.drawCircle(end, 2.5, centerDotPaint);
+    canvas.drawCircle(end, 2.5, centerDotBorder);
+
+    // 5. Manijas táctiles de ajuste si la cota está seleccionada para centrado
+    if (isSelected && !isTemp) {
+      _drawHandle(canvas: canvas, center: start, label: 'A', color: strokeColor);
+      _drawHandle(canvas: canvas, center: end, label: 'B', color: strokeColor);
+    }
+
+    // 6. Etiqueta central con texto de metrado y material
     final Offset mid = Offset((start.dx + end.dx) / 2, (start.dy + end.dy) / 2);
 
     final TextSpan span = TextSpan(
       text: label,
-      style: const TextStyle(
-        color: Colors.white,
+      style: TextStyle(
+        color: isSelected ? const Color(0xFF001F2F) : Colors.white,
         fontSize: 10,
         fontWeight: FontWeight.bold,
         letterSpacing: 0.2,
@@ -124,25 +184,69 @@ class MeasurementLinesPainter extends CustomPainter {
     );
     tp.layout();
 
-    final double padH = 6.0;
-    final double padV = 3.5;
+    final double padH = 7.0;
+    final double padV = 4.0;
     final Rect bgRect = Rect.fromCenter(
       center: mid,
       width: tp.width + padH * 2,
       height: tp.height + padV * 2,
     );
 
-    final RRect rrect = RRect.fromRectAndRadius(bgRect, const Radius.circular(5));
-    final Paint bgPaint = Paint()..color = bgColor;
-    final Paint borderPaint = Paint()
-      ..color = strokeColor
+    final RRect rrect = RRect.fromRectAndRadius(bgRect, const Radius.circular(6));
+    final Paint badgeBgPaint = Paint()
+      ..color = isSelected ? strokeColor : bgColor;
+    final Paint badgeBorderPaint = Paint()
+      ..color = isSelected ? const Color(0xFF001F2F) : strokeColor
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0;
+      ..strokeWidth = isSelected ? 1.5 : 1.1;
 
-    canvas.drawRRect(rrect, bgPaint);
-    canvas.drawRRect(rrect, borderPaint);
+    canvas.drawRRect(rrect, badgeBgPaint);
+    canvas.drawRRect(rrect, badgeBorderPaint);
 
     tp.paint(canvas, Offset(mid.dx - tp.width / 2, mid.dy - tp.height / 2));
+  }
+
+  void _drawHandle({
+    required Canvas canvas,
+    required Offset center,
+    required String label,
+    required Color color,
+  }) {
+    // Halo translúcido exterior
+    final Paint haloPaint = Paint()
+      ..color = color.withValues(alpha: 0.35)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(center, 16.0, haloPaint);
+
+    // Anillo exterior
+    final Paint ringPaint = Paint()
+      ..color = color
+      ..strokeWidth = 2.0
+      ..style = PaintingStyle.stroke;
+    canvas.drawCircle(center, 13.0, ringPaint);
+
+    // Centro circular sólido
+    final Paint centerBg = Paint()
+      ..color = const Color(0xFF001F2F)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(center, 10.0, centerBg);
+
+    // Letra A / B
+    final TextSpan span = TextSpan(
+      text: label,
+      style: TextStyle(
+        color: color,
+        fontSize: 10.5,
+        fontWeight: FontWeight.bold,
+      ),
+    );
+    final TextPainter tp = TextPainter(
+      text: span,
+      textAlign: TextAlign.center,
+      textDirection: TextDirection.ltr,
+    );
+    tp.layout();
+    tp.paint(canvas, Offset(center.dx - tp.width / 2, center.dy - tp.height / 2));
   }
 
   @override
@@ -164,7 +268,7 @@ class LoupeMagnifierWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Desplazar la lupa 80px por encima del dedo para que el dedo no tape la vista
+    // Desplazar la lupa 100px por encima del dedo para que el dedo no tape la vista
     double loupeX = touchPosition.dx - 45;
     double loupeY = touchPosition.dy - 100;
 
@@ -251,12 +355,23 @@ class CrosshairReticlePainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-/// Diálogo compacto de captura rápida de longitud en metros y selección de material contextual
+/// Resultado de la acción del modal de captura / edición
+enum MeasurementModalAction { saved, deleted, cancelled }
+
+class MeasurementModalResult {
+  final MeasurementModalAction action;
+  final LinearMeasurement? measurement;
+
+  const MeasurementModalResult({required this.action, this.measurement});
+}
+
+/// Diálogo de captura rápida y edición de longitud en metros y material contextual
 class MeasurementCaptureModal extends StatefulWidget {
   final Offset start;
   final Offset end;
-  final List<String> contextualConduits; // Materiales de canalización detectados en los pines de la foto
+  final List<String> contextualConduits;
   final VoiceRecognitionService voiceService;
+  final LinearMeasurement? existingMeasurement; // Para editar cota existente
 
   const MeasurementCaptureModal({
     super.key,
@@ -264,6 +379,7 @@ class MeasurementCaptureModal extends StatefulWidget {
     required this.end,
     required this.contextualConduits,
     required this.voiceService,
+    this.existingMeasurement,
   });
 
   @override
@@ -279,10 +395,17 @@ class _MeasurementCaptureModalState extends State<MeasurementCaptureModal> {
   @override
   void initState() {
     super.initState();
-    // Seleccionar por defecto el primer material contextual si existe
-    _selectedMaterial = widget.contextualConduits.isNotEmpty
-        ? widget.contextualConduits.first
-        : 'Tubo EMT 3/4"';
+    if (widget.existingMeasurement != null) {
+      final m = widget.existingMeasurement!;
+      _distanceController.text = m.longitudMetros % 1 == 0
+          ? m.longitudMetros.toInt().toString()
+          : m.longitudMetros.toStringAsFixed(2);
+      _selectedMaterial = m.material;
+    } else {
+      _selectedMaterial = widget.contextualConduits.isNotEmpty
+          ? widget.contextualConduits.first
+          : 'Tubo EMT 3/4"';
+    }
   }
 
   @override
@@ -326,7 +449,6 @@ class _MeasurementCaptureModalState extends State<MeasurementCaptureModal> {
           _recognizedVoice = text;
         });
 
-        // Intentar extraer número decimal de la voz (ej: "12 punto 5", "quince metros", "3.80")
         final number = _extractMetersFromVoice(text);
         if (number != null && number > 0) {
           _distanceController.text = number.toStringAsFixed(2);
@@ -336,7 +458,6 @@ class _MeasurementCaptureModalState extends State<MeasurementCaptureModal> {
   }
 
   double? _extractMetersFromVoice(String spoken) {
-    // Normalizar texto
     String clean = spoken.toLowerCase()
         .replaceAll('metros', '')
         .replaceAll('metro', '')
@@ -344,10 +465,7 @@ class _MeasurementCaptureModalState extends State<MeasurementCaptureModal> {
         .replaceAll('m', '')
         .trim();
 
-    // Reemplazar palabras numéricas comunes o comas por puntos
     clean = clean.replaceAll('coma', '.').replaceAll('punto', '.');
-    
-    // Buscar regex numérico (ej. "12.5" o "12")
     final match = RegExp(r'(\d+[\.,]?\d*)').firstMatch(clean);
     if (match != null) {
       final numStr = match.group(1)!.replaceAll(',', '.');
@@ -358,6 +476,8 @@ class _MeasurementCaptureModalState extends State<MeasurementCaptureModal> {
 
   @override
   Widget build(BuildContext context) {
+    final bool isEditing = widget.existingMeasurement != null;
+
     return Dialog(
       backgroundColor: const Color(0xFF1E293B),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -375,17 +495,17 @@ class _MeasurementCaptureModalState extends State<MeasurementCaptureModal> {
                     color: const Color(0xFFE3A51A),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(
-                    Icons.straighten,
-                    color: Color(0xFF001F2F),
+                  child: Icon(
+                    isEditing ? Icons.edit : Icons.straighten,
+                    color: const Color(0xFF001F2F),
                     size: 22,
                   ),
                 ),
                 const SizedBox(width: 10),
-                const Expanded(
+                Expanded(
                   child: Text(
-                    'Registrar Cota de Medida',
-                    style: TextStyle(
+                    isEditing ? 'Editar Cota de Medida' : 'Registrar Cota de Medida',
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
@@ -488,10 +608,24 @@ class _MeasurementCaptureModalState extends State<MeasurementCaptureModal> {
 
             const SizedBox(height: 20),
 
-            // Botones de acción
+            // Botones de acción (Eliminar si está editando, Cancelar, Guardar)
             Row(
-              mainAxisAlignment: MainAxisAlignment.end,
               children: [
+                if (isEditing)
+                  TextButton.icon(
+                    onPressed: () {
+                      Navigator.pop(
+                        context,
+                        const MeasurementModalResult(action: MeasurementModalAction.deleted),
+                      );
+                    },
+                    icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 18),
+                    label: const Text(
+                      'Eliminar',
+                      style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                  ),
+                const Spacer(),
                 TextButton(
                   onPressed: () => Navigator.pop(context),
                   child: const Text('Cancelar', style: TextStyle(color: Colors.white54)),
@@ -500,7 +634,7 @@ class _MeasurementCaptureModalState extends State<MeasurementCaptureModal> {
                 ElevatedButton.icon(
                   onPressed: _submitMeasurement,
                   icon: const Icon(Icons.check, size: 18),
-                  label: const Text('Guardar Cota'),
+                  label: Text(isEditing ? 'Guardar Cambios' : 'Guardar Cota'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFFE3A51A),
                     foregroundColor: const Color(0xFF001F2F),
@@ -518,7 +652,6 @@ class _MeasurementCaptureModalState extends State<MeasurementCaptureModal> {
   }
 
   List<Widget> _buildMaterialChips() {
-    // Combinar los contextuales con los estándares
     final Set<String> allOptions = {};
     allOptions.addAll(widget.contextualConduits);
     allOptions.addAll([
@@ -574,14 +707,25 @@ class _MeasurementCaptureModalState extends State<MeasurementCaptureModal> {
       return;
     }
 
-    final newMeasurement = LinearMeasurement(
-      id: 'cota_${DateTime.now().millisecondsSinceEpoch}',
-      startOffset: widget.start,
-      endOffset: widget.end,
-      longitudMetros: meters,
-      material: _selectedMaterial,
-    );
+    final result = (widget.existingMeasurement != null)
+        ? widget.existingMeasurement!.copyWith(
+            longitudMetros: meters,
+            material: _selectedMaterial,
+          )
+        : LinearMeasurement(
+            id: 'cota_${DateTime.now().millisecondsSinceEpoch}',
+            startOffset: widget.start,
+            endOffset: widget.end,
+            longitudMetros: meters,
+            material: _selectedMaterial,
+          );
 
-    Navigator.pop(context, newMeasurement);
+    Navigator.pop(
+      context,
+      MeasurementModalResult(
+        action: MeasurementModalAction.saved,
+        measurement: result,
+      ),
+    );
   }
 }

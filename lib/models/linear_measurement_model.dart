@@ -64,6 +64,28 @@ class LinearMeasurement {
     return math.sqrt(dx * dx + dy * dy);
   }
 
+  LinearMeasurement copyWith({
+    String? id,
+    Offset? startOffset,
+    Offset? endOffset,
+    double? longitudMetros,
+    String? material,
+    String? origenEstructura,
+    String? destinoEstructura,
+    DateTime? timestamp,
+  }) {
+    return LinearMeasurement(
+      id: id ?? this.id,
+      startOffset: startOffset ?? this.startOffset,
+      endOffset: endOffset ?? this.endOffset,
+      longitudMetros: longitudMetros ?? this.longitudMetros,
+      material: material ?? this.material,
+      origenEstructura: origenEstructura ?? this.origenEstructura,
+      destinoEstructura: destinoEstructura ?? this.destinoEstructura,
+      timestamp: timestamp ?? this.timestamp,
+    );
+  }
+
   Map<String, dynamic> toMap() => toJson();
 
   Map<String, dynamic> toJson() {

@@ -410,6 +410,306 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
     return result;
   }
 
+  // Cota seleccionada para centrado y edición de manijas A (Origen) y B (Destino)
+  Offset? _loupeFocalPoint;
+  String? _selectedMeasurementId;
+  bool _isDraggingHandleA = false;
+  bool _isDraggingHandleB = false;
+
+  LinearMeasurement? get _selectedMeasurement {
+    if (_selectedMeasurementId == null) return null;
+    try {
+      return _linearMeasurements.firstWhere((m) => m.id == _selectedMeasurementId);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Encuentra si un punto de toque colisiona con alguna cota o sus manijas
+  int? _findHitMeasurementIndex(Offset tapPos) {
+    for (int i = _linearMeasurements.length - 1; i >= 0; i--) {
+      final m = _linearMeasurements[i];
+      // 1. Manija A (Origen)
+      if ((tapPos - m.startOffset).distance <= 34.0) {
+        return i;
+      }
+      // 2. Manija B (Destino)
+      if ((tapPos - m.endOffset).distance <= 34.0) {
+        return i;
+      }
+      // 3. Etiqueta central de la cota
+      final mid = Offset((m.startOffset.dx + m.endOffset.dx) / 2, (m.startOffset.dy + m.endOffset.dy) / 2);
+      if ((tapPos - mid).distance <= 38.0) {
+        return i;
+      }
+      // 4. Trazo lineal
+      final distToLine = _distancePointToSegment(tapPos, m.startOffset, m.endOffset);
+      if (distToLine <= 24.0) {
+        return i;
+      }
+    }
+    return null;
+  }
+
+  double _distancePointToSegment(Offset p, Offset a, Offset b) {
+    final double l2 = (b.dx - a.dx) * (b.dx - a.dx) + (b.dy - a.dy) * (b.dy - a.dy);
+    if (l2 == 0) return (p - a).distance;
+    final double t = ((p.dx - a.dx) * (b.dx - a.dx) + (p.dy - a.dy) * (b.dy - a.dy)) / l2;
+    final double clampedT = t.clamp(0.0, 1.0);
+    final Offset projection = Offset(a.dx + clampedT * (b.dx - a.dx), a.dy + clampedT * (b.dy - a.dy));
+    return (p - projection).distance;
+  }
+
+  /// Abre el diálogo para editar o eliminar una cota individual
+  Future<void> _openEditMeasurementModal(LinearMeasurement m) async {
+    final result = await showDialog<MeasurementModalResult>(
+      context: context,
+      builder: (ctx) => MeasurementCaptureModal(
+        start: m.startOffset,
+        end: m.endOffset,
+        contextualConduits: _getContextualConduitMaterials(),
+        voiceService: _voiceService,
+        existingMeasurement: m,
+      ),
+    );
+
+    if (result != null) {
+      if (result.action == MeasurementModalAction.deleted) {
+        setState(() {
+          _linearMeasurements.removeWhere((item) => item.id == m.id);
+          if (_selectedMeasurementId == m.id) {
+            _selectedMeasurementId = null;
+          }
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✓ Cota eliminada correctamente.'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 1),
+            ),
+          );
+        }
+      } else if (result.action == MeasurementModalAction.saved && result.measurement != null) {
+        setState(() {
+          final idx = _linearMeasurements.indexWhere((item) => item.id == m.id);
+          if (idx != -1) {
+            _linearMeasurements[idx] = result.measurement!;
+          }
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✓ Cota actualizada: ${result.measurement!.labelFormatted}'),
+              backgroundColor: const Color(0xFF10B981),
+              duration: const Duration(seconds: 1),
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  /// Muestra una hoja inferior con el listado detallado de cotas, edición y eliminación individual
+  void _showMeasurementsListSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          return Container(
+            height: MediaQuery.of(context).size.height * 0.65,
+            padding: const EdgeInsets.all(20),
+            decoration: const BoxDecoration(
+              color: Color(0xFF1E293B),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: SafeArea(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      const Icon(Icons.straighten, color: Color(0xFFE3A51A), size: 24),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Cotas y Medidas Lineales',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              '${_linearMeasurements.length} tramos • Total: ${_linearMeasurements.fold<double>(0.0, (acc, m) => acc + m.longitudMetros).toStringAsFixed(2)} m',
+                              style: const TextStyle(color: Color(0xFFE3A51A), fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white54),
+                        onPressed: () => Navigator.pop(sheetCtx),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  if (_linearMeasurements.isEmpty)
+                    const Expanded(
+                      child: Center(
+                        child: Text(
+                          'No hay cotas registradas en esta foto.\nArrastra entre estructuras para añadir una.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.white54, fontSize: 13),
+                        ),
+                      ),
+                    )
+                  else
+                    Expanded(
+                      child: ListView.separated(
+                        itemCount: _linearMeasurements.length,
+                        separatorBuilder: (context, index) => const SizedBox(height: 8),
+                        itemBuilder: (itemCtx, index) {
+                          final m = _linearMeasurements[index];
+                          final isSelected = m.id == _selectedMeasurementId;
+
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? const Color(0xFF0F2744)
+                                  : const Color(0xFF0F172A),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: isSelected
+                                    ? const Color(0xFF00E676)
+                                    : const Color(0xFF334155),
+                                width: isSelected ? 1.5 : 1.0,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 28,
+                                  height: 28,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFE3A51A),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      '#${index + 1}',
+                                      style: const TextStyle(
+                                        color: Color(0xFF001F2F),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '${m.longitudMetros.toStringAsFixed(2)} metros',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        m.material,
+                                        style: const TextStyle(
+                                          color: Color(0xFF94A3B8),
+                                          fontSize: 11.5,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                // Botón Centrar / Ajustar manijas
+                                IconButton(
+                                  icon: const Icon(Icons.my_location, color: Color(0xFF38BDF8), size: 20),
+                                  tooltip: 'Centrar y ajustar manijas A y B',
+                                  onPressed: () {
+                                    setState(() {
+                                      _selectedMeasurementId = m.id;
+                                    });
+                                    Navigator.pop(sheetCtx);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('🎯 Cota #${index + 1} seleccionada. Arrastra las manijas A u B con la lupa.'),
+                                        backgroundColor: const Color(0xFF0284C7),
+                                        duration: const Duration(seconds: 2),
+                                      ),
+                                    );
+                                  },
+                                ),
+                                // Botón Editar
+                                IconButton(
+                                  icon: const Icon(Icons.edit_outlined, color: Color(0xFFE3A51A), size: 20),
+                                  tooltip: 'Editar longitud o material',
+                                  onPressed: () async {
+                                    Navigator.pop(sheetCtx);
+                                    await _openEditMeasurementModal(m);
+                                  },
+                                ),
+                                // Botón Eliminar
+                                IconButton(
+                                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                                  tooltip: 'Eliminar cota',
+                                  onPressed: () {
+                                    setState(() {
+                                      _linearMeasurements.removeAt(index);
+                                      if (_selectedMeasurementId == m.id) {
+                                        _selectedMeasurementId = null;
+                                      }
+                                    });
+                                    setSheetState(() {});
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('✓ Cota eliminada.'),
+                                        backgroundColor: Colors.orange,
+                                        duration: Duration(seconds: 1),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   // Sesión continua multiproyecto (VISTEC V2 & V3)
   int _sessionPhotoNumber = 1;
   int _savedPhotosCount = 0;
@@ -2818,12 +3118,14 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
           child: Text(
             _overlayMode == OverlayDisplayMode.pines
                 ? '💡 Modo Pines: Toca la foto para colocar pines o usa la barra inferior.'
-                : '📏 Modo Medidas: Arrastra entre estructuras. La lupa te ayuda a aproximar bordes.',
+                : (_selectedMeasurementId != null
+                    ? '🎯 Cota seleccionada: Arrastra manija A (Origen) o B (Destino) con la lupa para centrar los bordes.'
+                    : '📏 Modo Medidas: Arrastra para trazar cota (<--->). Toca una cota para centrarla, editarla o borrarla.'),
             textAlign: TextAlign.center,
             style: TextStyle(
               color: _overlayMode == OverlayDisplayMode.pines
                   ? const Color(0xFF38BDF8)
-                  : const Color(0xFFE3A51A),
+                  : (_selectedMeasurementId != null ? const Color(0xFF00E676) : const Color(0xFFE3A51A)),
               fontSize: 11,
               fontWeight: FontWeight.w500,
             ),
@@ -2852,42 +3154,148 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                           key: _repaintBoundaryKey,
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
-                            onTapUp: _overlayMode == OverlayDisplayMode.pines
-                                ? (details) {
-                                    // Centrar el pin en el punto exacto del toque
-                                    final Offset tapPosition = Offset(
-                                      details.localPosition.dx,
-                                      details.localPosition.dy,
-                                    );
-                                    _openStickerSelector(
-                                      title:
-                                          'Añadir Pin #${_placedStickers.length + 1}',
-                                      initialPosition: tapPosition,
-                                    );
+                            onTapUp: (details) {
+                              if (_overlayMode == OverlayDisplayMode.pines) {
+                                // Centrar el pin en el punto exacto del toque
+                                final Offset tapPosition = Offset(
+                                  details.localPosition.dx,
+                                  details.localPosition.dy,
+                                );
+                                _openStickerSelector(
+                                  title: 'Añadir Pin #${_placedStickers.length + 1}',
+                                  initialPosition: tapPosition,
+                                );
+                              } else if (_overlayMode == OverlayDisplayMode.medidas) {
+                                // Verificar si tocó una cota para seleccionarla o editarla
+                                final hitIndex = _findHitMeasurementIndex(details.localPosition);
+                                if (hitIndex != null) {
+                                  final hitM = _linearMeasurements[hitIndex];
+                                  if (_selectedMeasurementId == hitM.id) {
+                                    // Segundo tap sobre la cota seleccionada: abrir edición
+                                    _openEditMeasurementModal(hitM);
+                                  } else {
+                                    // Primer tap: seleccionar y mostrar manijas A y B para centrado
+                                    setState(() {
+                                      _selectedMeasurementId = hitM.id;
+                                    });
                                   }
-                                : null,
+                                } else {
+                                  // Tap afuera: deseleccionar
+                                  if (_selectedMeasurementId != null) {
+                                    setState(() => _selectedMeasurementId = null);
+                                  }
+                                }
+                              }
+                            },
                             onPanStart: _overlayMode == OverlayDisplayMode.medidas
                                 ? (details) {
+                                    final tap = details.localPosition;
+
+                                    // 1. Si hay una cota seleccionada, verificar si toca Manija A (Origen) o Manija B (Destino)
+                                    if (_selectedMeasurement != null) {
+                                      final sel = _selectedMeasurement!;
+                                      if ((tap - sel.startOffset).distance <= 36.0) {
+                                        setState(() {
+                                          _isDraggingHandleA = true;
+                                          _showLoupe = true;
+                                          _loupeFocalPoint = sel.startOffset;
+                                        });
+                                        return;
+                                      }
+                                      if ((tap - sel.endOffset).distance <= 36.0) {
+                                        setState(() {
+                                          _isDraggingHandleB = true;
+                                          _showLoupe = true;
+                                          _loupeFocalPoint = sel.endOffset;
+                                        });
+                                        return;
+                                      }
+                                    }
+
+                                    // 2. Verificar si toca alguna otra cota existente
+                                    final hitIdx = _findHitMeasurementIndex(tap);
+                                    if (hitIdx != null) {
+                                      final hitM = _linearMeasurements[hitIdx];
+                                      final distA = (tap - hitM.startOffset).distance;
+                                      final distB = (tap - hitM.endOffset).distance;
+                                      if (distA <= 36.0) {
+                                        setState(() {
+                                          _selectedMeasurementId = hitM.id;
+                                          _isDraggingHandleA = true;
+                                          _showLoupe = true;
+                                          _loupeFocalPoint = hitM.startOffset;
+                                        });
+                                        return;
+                                      } else if (distB <= 36.0) {
+                                        setState(() {
+                                          _selectedMeasurementId = hitM.id;
+                                          _isDraggingHandleB = true;
+                                          _showLoupe = true;
+                                          _loupeFocalPoint = hitM.endOffset;
+                                        });
+                                        return;
+                                      } else {
+                                        setState(() {
+                                          _selectedMeasurementId = hitM.id;
+                                        });
+                                        return;
+                                      }
+                                    }
+
+                                    // 3. Trazar nueva cota si tocó en espacio libre
                                     setState(() {
-                                      _cotaDragStart = details.localPosition;
-                                      _cotaDragCurrent = details.localPosition;
+                                      _selectedMeasurementId = null;
+                                      _cotaDragStart = tap;
+                                      _cotaDragCurrent = tap;
                                       _showLoupe = true;
+                                      _loupeFocalPoint = tap;
                                     });
                                   }
                                 : null,
                             onPanUpdate: _overlayMode == OverlayDisplayMode.medidas
                                 ? (details) {
-                                    setState(() {
-                                      _cotaDragCurrent = details.localPosition;
-                                    });
+                                    final pos = details.localPosition;
+                                    if (_isDraggingHandleA && _selectedMeasurementId != null) {
+                                      final idx = _linearMeasurements.indexWhere((m) => m.id == _selectedMeasurementId);
+                                      if (idx != -1) {
+                                        setState(() {
+                                          _linearMeasurements[idx] = _linearMeasurements[idx].copyWith(startOffset: pos);
+                                          _loupeFocalPoint = pos;
+                                        });
+                                      }
+                                    } else if (_isDraggingHandleB && _selectedMeasurementId != null) {
+                                      final idx = _linearMeasurements.indexWhere((m) => m.id == _selectedMeasurementId);
+                                      if (idx != -1) {
+                                        setState(() {
+                                          _linearMeasurements[idx] = _linearMeasurements[idx].copyWith(endOffset: pos);
+                                          _loupeFocalPoint = pos;
+                                        });
+                                      }
+                                    } else if (_cotaDragStart != null) {
+                                      setState(() {
+                                        _cotaDragCurrent = pos;
+                                        _loupeFocalPoint = pos;
+                                      });
+                                    }
                                   }
                                 : null,
                             onPanEnd: _overlayMode == OverlayDisplayMode.medidas
                                 ? (details) async {
+                                    if (_isDraggingHandleA || _isDraggingHandleB) {
+                                      setState(() {
+                                        _isDraggingHandleA = false;
+                                        _isDraggingHandleB = false;
+                                        _showLoupe = false;
+                                        _loupeFocalPoint = null;
+                                      });
+                                      return;
+                                    }
+
                                     final start = _cotaDragStart;
                                     final end = _cotaDragCurrent;
                                     setState(() {
                                       _showLoupe = false;
+                                      _loupeFocalPoint = null;
                                       _cotaDragStart = null;
                                       _cotaDragCurrent = null;
                                     });
@@ -2897,33 +3305,28 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                                       final dy = end.dy - start.dy;
                                       final distance = math.sqrt(dx * dx + dy * dy);
                                       if (distance > 15) {
-                                        final newCota =
-                                            await showDialog<LinearMeasurement>(
+                                        final result = await showDialog<MeasurementModalResult>(
                                           context: context,
-                                          builder: (ctx) =>
-                                              MeasurementCaptureModal(
+                                          builder: (ctx) => MeasurementCaptureModal(
                                             start: start,
                                             end: end,
-                                            contextualConduits:
-                                                _getContextualConduitMaterials(),
+                                            contextualConduits: _getContextualConduitMaterials(),
                                             voiceService: _voiceService,
                                           ),
                                         );
-                                        if (newCota != null) {
+                                        if (result != null && result.action == MeasurementModalAction.saved && result.measurement != null) {
                                           setState(() {
-                                            _linearMeasurements.add(newCota);
+                                            _linearMeasurements.add(result.measurement!);
+                                            _selectedMeasurementId = result.measurement!.id; // Manijas A y B listas para micro-ajuste!
                                           });
                                           if (mounted) {
-                                            ScaffoldMessenger.of(context)
-                                                .showSnackBar(
-                                              SnackBar(
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              const SnackBar(
                                                 content: Text(
-                                                  '✓ Cota registrada: ${newCota.labelFormatted}',
+                                                  '✓ Cota registrada. Arrastra las manijas A o B con la lupa si deseas centrar los bordes.',
                                                 ),
-                                                backgroundColor:
-                                                    const Color(0xFF10B981),
-                                                duration:
-                                                    const Duration(seconds: 1),
+                                                backgroundColor: Color(0xFF10B981),
+                                                duration: Duration(seconds: 2),
                                               ),
                                             );
                                           }
@@ -3027,11 +3430,12 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                                     ),
                                 ],
 
-                                // 2. MODO MEDIDAS (Cotas y Lupa de precisión, pines ocultos para no saturar)
+                                // 2. MODO MEDIDAS (Cotas con flechas de 2 puntas y Lupa de precisión, pines ocultos para no saturar)
                                 if (_overlayMode == OverlayDisplayMode.medidas) ...[
                                   CustomPaint(
                                     painter: MeasurementLinesPainter(
                                       measurements: _linearMeasurements,
+                                      selectedMeasurementId: _selectedMeasurementId,
                                       currentStart: _cotaDragStart,
                                       currentEnd: _cotaDragCurrent,
                                       activeMaterial:
@@ -3042,9 +3446,9 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                                               : null,
                                     ),
                                   ),
-                                  if (_showLoupe && _cotaDragCurrent != null)
+                                  if (_showLoupe && (_loupeFocalPoint != null || _cotaDragCurrent != null))
                                     LoupeMagnifierWidget(
-                                      touchPosition: _cotaDragCurrent!,
+                                      touchPosition: _loupeFocalPoint ?? _cotaDragCurrent!,
                                       canvasSize: MediaQuery.of(context).size,
                                     ),
                                 ],
@@ -3205,8 +3609,95 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                       ),
                     ],
                   )
+                else if (_selectedMeasurement != null)
+                  // Barra de herramientas cuando hay una cota seleccionada (manijas activas)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0F2744),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFF00E676), width: 1.5),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.my_location, color: Color(0xFF00E676), size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'COTA SELECCIONADA (#${_linearMeasurements.indexOf(_selectedMeasurement!) + 1})',
+                                style: const TextStyle(
+                                  color: Color(0xFF00E676),
+                                  fontSize: 9.0,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Text(
+                                '${_selectedMeasurement!.longitudMetros.toStringAsFixed(2)} m • ${_selectedMeasurement!.material}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12.0,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                        // Botón Editar
+                        ElevatedButton.icon(
+                          onPressed: () => _openEditMeasurementModal(_selectedMeasurement!),
+                          icon: const Icon(Icons.edit, size: 14),
+                          label: const Text('Editar', style: TextStyle(fontSize: 11)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFE3A51A),
+                            foregroundColor: const Color(0xFF001F2F),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            textStyle: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        // Botón Eliminar individual
+                        IconButton(
+                          onPressed: () {
+                            final deletedLabel = _selectedMeasurement!.labelFormatted;
+                            setState(() {
+                              _linearMeasurements.removeWhere((m) => m.id == _selectedMeasurementId);
+                              _selectedMeasurementId = null;
+                            });
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('✓ Cota eliminada: $deletedLabel'),
+                                backgroundColor: Colors.orange,
+                                duration: const Duration(seconds: 1),
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.delete_outline, size: 20, color: Colors.redAccent),
+                          tooltip: 'Eliminar esta cota',
+                          style: IconButton.styleFrom(
+                            backgroundColor: const Color(0xFF7F1D1D).withValues(alpha: 0.7),
+                            padding: const EdgeInsets.all(8),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        // Botón Deseleccionar
+                        IconButton(
+                          onPressed: () => setState(() => _selectedMeasurementId = null),
+                          icon: const Icon(Icons.close, size: 18, color: Colors.white70),
+                          tooltip: 'Deseleccionar',
+                        ),
+                      ],
+                    ),
+                  )
                 else
-                  // Barra de herramientas del Modo Medidas
+                  // Barra de herramientas general del Modo Medidas
                   Row(
                     children: [
                       // Indicador de Total de Metros Acumulados
@@ -3246,7 +3737,22 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 6),
+                      // Botón Lista de Cotas (para ver, centrar, editar y borrar individualmente)
+                      ElevatedButton.icon(
+                        onPressed: _linearMeasurements.isEmpty ? null : _showMeasurementsListSheet,
+                        icon: const Icon(Icons.format_list_bulleted, size: 16),
+                        label: Text('Cotas (${_linearMeasurements.length})', style: const TextStyle(fontSize: 11)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0284C7),
+                          foregroundColor: Colors.white,
+                          disabledBackgroundColor: Colors.white10,
+                          disabledForegroundColor: Colors.white24,
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
                       // Botón Deshacer última cota
                       ElevatedButton.icon(
                         onPressed: _linearMeasurements.isEmpty
@@ -3254,6 +3760,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                             : () {
                                 setState(() {
                                   _linearMeasurements.removeLast();
+                                  _selectedMeasurementId = null;
                                 });
                               },
                         icon: const Icon(Icons.undo, size: 16),
@@ -3263,28 +3770,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                           foregroundColor: Colors.white,
                           disabledBackgroundColor: Colors.white10,
                           disabledForegroundColor: Colors.white24,
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      // Botón Limpiar medidas
-                      IconButton(
-                        onPressed: _linearMeasurements.isEmpty
-                            ? null
-                            : () {
-                                setState(() {
-                                  _linearMeasurements.clear();
-                                });
-                              },
-                        icon: const Icon(Icons.delete_outline, size: 20),
-                        tooltip: 'Limpiar todas las medidas',
-                        style: IconButton.styleFrom(
-                          backgroundColor: const Color(0xFF7F1D1D),
-                          foregroundColor: Colors.white,
-                          disabledBackgroundColor: Colors.white10,
-                          disabledForegroundColor: Colors.white24,
-                          padding: const EdgeInsets.all(10),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         ),
                       ),
