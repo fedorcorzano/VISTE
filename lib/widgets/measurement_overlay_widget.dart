@@ -10,6 +10,7 @@ class MeasurementLinesPainter extends CustomPainter {
   final String? selectedMeasurementId;
   final Offset? currentStart;
   final Offset? currentEnd;
+  final Offset? guidedOriginA;
   final String? activeMaterial;
 
   MeasurementLinesPainter({
@@ -17,6 +18,7 @@ class MeasurementLinesPainter extends CustomPainter {
     this.selectedMeasurementId,
     this.currentStart,
     this.currentEnd,
+    this.guidedOriginA,
     this.activeMaterial,
   });
 
@@ -37,23 +39,77 @@ class MeasurementLinesPainter extends CustomPainter {
       );
     }
 
-    // 2. Dibujar la cota que se está trazando en vivo
-    if (currentStart != null && currentEnd != null) {
-      final double dx = currentEnd!.dx - currentStart!.dx;
-      final double dy = currentEnd!.dy - currentStart!.dy;
+    // 2. Si hay un Origen A fijado en el flujo guiado, dibujarlo como baliza destacada
+    if (guidedOriginA != null) {
+      _drawGuidedOriginBeacon(canvas, guidedOriginA!);
+    }
+
+    // 3. Dibujar la cota que se está trazando en vivo (bien desde currentStart o desde guidedOriginA hasta currentEnd)
+    final Offset? liveStart = guidedOriginA ?? currentStart;
+    if (liveStart != null && currentEnd != null) {
+      final double dx = currentEnd!.dx - liveStart.dx;
+      final double dy = currentEnd!.dy - liveStart.dy;
       final double pixelDistance = math.sqrt(dx * dx + dy * dy);
 
       if (pixelDistance > 5) {
         _drawDimensionArrow(
           canvas: canvas,
-          start: currentStart!,
+          start: liveStart,
           end: currentEnd!,
-          label: activeMaterial != null ? 'Trazando • $activeMaterial' : 'Ajustando cota...',
+          label: activeMaterial != null ? 'Trazando • $activeMaterial' : 'Guiando Destino (B)...',
           isTemp: true,
           isSelected: true,
         );
       }
     }
+  }
+
+  void _drawGuidedOriginBeacon(Canvas canvas, Offset origin) {
+    // Halo pulsante exterior
+    final Paint pulsePaint = Paint()
+      ..color = const Color(0xFF00E676).withValues(alpha: 0.25)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(origin, 18, pulsePaint);
+
+    final Paint ringPaint = Paint()
+      ..color = const Color(0xFF00E676)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
+    canvas.drawCircle(origin, 10, ringPaint);
+
+    // Punto central de contacto
+    final Paint centerPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+    final Paint centerBorder = Paint()
+      ..color = Colors.black
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+    canvas.drawCircle(origin, 3.5, centerPaint);
+    canvas.drawCircle(origin, 3.5, centerBorder);
+
+    // Etiqueta flotante "ORIGEN A"
+    final TextSpan span = const TextSpan(
+      text: 'ORIGEN A',
+      style: TextStyle(
+        color: Color(0xFF001F2F),
+        fontSize: 9,
+        fontWeight: FontWeight.w900,
+        letterSpacing: 0.5,
+      ),
+    );
+    final TextPainter tp = TextPainter(
+      text: span,
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    final Offset badgeOffset = Offset(origin.dx - tp.width / 2, origin.dy - 26);
+    final Rect badgeRect = Rect.fromLTWH(badgeOffset.dx - 5, badgeOffset.dy - 2, tp.width + 10, tp.height + 4);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(badgeRect, const Radius.circular(4)),
+      Paint()..color = const Color(0xFF00E676),
+    );
+    tp.paint(canvas, badgeOffset);
   }
 
   void _drawDimensionArrow({
@@ -255,44 +311,63 @@ class MeasurementLinesPainter extends CustomPainter {
   }
 }
 
-/// Lupa de magnificación flotante con retícula en cruz para aproximar al milímetro los bordes de estructuras
+/// Lupa de magnificación flotante de alta precisión con puntero táctico y compensación exacta de focalPointOffset
 class LoupeMagnifierWidget extends StatelessWidget {
   final Offset touchPosition;
   final Size canvasSize;
+  final String? label;
+  final Color accentColor;
 
   const LoupeMagnifierWidget({
     super.key,
     required this.touchPosition,
     required this.canvasSize,
+    this.label,
+    this.accentColor = const Color(0xFF00E676),
   });
 
   @override
   Widget build(BuildContext context) {
-    // Desplazar la lupa 100px por encima del dedo para que el dedo no tape la vista
-    double loupeX = touchPosition.dx - 45;
-    double loupeY = touchPosition.dy - 100;
+    const double loupeDiameter = 110.0;
+    const double loupeRadius = loupeDiameter / 2;
 
-    // Asegurar que no se salga de los límites de la pantalla
-    loupeX = loupeX.clamp(10.0, math.max(10.0, canvasSize.width - 100.0));
-    if (loupeY < 10) {
-      // Si está muy cerca del borde superior, mostrar la lupa debajo del dedo
-      loupeY = touchPosition.dy + 35;
+    // Desplazar la lupa 110px por encima del dedo para despejar por completo el área visual
+    double loupeX = touchPosition.dx - loupeRadius;
+    double loupeY = touchPosition.dy - 110.0;
+
+    // Control de bordes de pantalla
+    loupeX = loupeX.clamp(10.0, math.max(10.0, canvasSize.width - loupeDiameter - 10.0));
+    if (loupeY < 15.0) {
+      // Si el punto está pegado al borde superior, invertir la lupa debajo del dedo
+      loupeY = touchPosition.dy + 40.0;
     }
+
+    final double centerX = loupeX + loupeRadius;
+    final double centerY = loupeY + loupeRadius;
+
+    // CÁLCULO EXACTO: Vector desde el centro geométrico de la lupa hasta el punto de contacto real
+    // Esto garantiza que el centro de la lupa y la punta del visor coincidan milimétricamente con el contacto
+    final Offset focalOffset = Offset(touchPosition.dx - centerX, touchPosition.dy - centerY);
 
     return Positioned(
       left: loupeX,
       top: loupeY,
       child: IgnorePointer(
         child: Container(
-          width: 90,
-          height: 90,
+          width: loupeDiameter,
+          height: loupeDiameter,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: Colors.transparent,
-            border: Border.all(color: const Color(0xFFE3A51A), width: 2.8),
-            boxShadow: const [
+            border: Border.all(color: accentColor, width: 2.8),
+            boxShadow: [
               BoxShadow(
-                color: Colors.black54,
+                color: accentColor.withValues(alpha: 0.40),
+                blurRadius: 14,
+                spreadRadius: 2,
+              ),
+              const BoxShadow(
+                color: Colors.black87,
                 blurRadius: 10,
                 spreadRadius: 2,
                 offset: Offset(0, 4),
@@ -307,15 +382,37 @@ class LoupeMagnifierWidget extends StatelessWidget {
                   decoration: const MagnifierDecoration(
                     shape: CircleBorder(),
                   ),
-                  size: const Size(90, 90),
-                  magnificationScale: 2.0,
-                  focalPointOffset: Offset.zero,
+                  size: const Size(loupeDiameter, loupeDiameter),
+                  magnificationScale: 2.5,
+                  focalPointOffset: focalOffset,
                 ),
-                // Retícula de precisión (Cruz +)
+                // Retícula táctica y puntero de máxima precisión en el centro
                 CustomPaint(
-                  size: const Size(90, 90),
-                  painter: CrosshairReticlePainter(),
+                  size: const Size(loupeDiameter, loupeDiameter),
+                  painter: CrosshairReticlePainter(color: accentColor),
                 ),
+                // Etiqueta superior con el paso activo (ORIGEN A / DESTINO B)
+                if (label != null)
+                  Positioned(
+                    top: 6,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.85),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: accentColor.withValues(alpha: 0.9), width: 1.0),
+                      ),
+                      child: Text(
+                        label!,
+                        style: TextStyle(
+                          color: accentColor,
+                          fontSize: 8.5,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0.6,
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -325,30 +422,109 @@ class LoupeMagnifierWidget extends StatelessWidget {
   }
 }
 
-/// Dibuja la cruz de precisión en el centro de la lupa
+/// Dibuja la retícula técnica militar con puntero central ("la punta") lista para alinear al milímetro
 class CrosshairReticlePainter extends CustomPainter {
+  final Color color;
+
+  const CrosshairReticlePainter({this.color = const Color(0xFF00E676)});
+
   @override
   void paint(Canvas canvas, Size size) {
-    final Paint paint = Paint()
-      ..color = const Color(0xFFFF3366) // Rojo brillante de alta visibilidad
-      ..strokeWidth = 1.2;
-
     final double cx = size.width / 2;
     final double cy = size.height / 2;
-    const double len = 12.0;
-    const double gap = 3.0;
 
-    // Líneas horizontales
-    canvas.drawLine(Offset(cx - len, cy), Offset(cx - gap, cy), paint);
-    canvas.drawLine(Offset(cx + gap, cy), Offset(cx + len, cy), paint);
+    // 1. Círculo exterior táctico con líneas guía
+    final Paint circlePaint = Paint()
+      ..color = color.withValues(alpha: 0.65)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+    canvas.drawCircle(Offset(cx, cy), 24.0, circlePaint);
 
-    // Líneas verticales
-    canvas.drawLine(Offset(cx, cy - len), Offset(cx, cy - gap), paint);
-    canvas.drawLine(Offset(cx, cy + gap), Offset(cx, cy + len), paint);
+    final Paint circleShadow = Paint()
+      ..color = Colors.black.withValues(alpha: 0.7)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.2;
+    canvas.drawCircle(Offset(cx, cy), 24.0, circleShadow);
 
-    // Punto central
-    final Paint dotPaint = Paint()..color = const Color(0xFFFF3366);
-    canvas.drawCircle(Offset(cx, cy), 1.5, dotPaint);
+    // 2. Líneas de cruz de precisión (con apertura central de 12px)
+    final Paint lineShadow = Paint()
+      ..color = Colors.black.withValues(alpha: 0.85)
+      ..strokeWidth = 2.4;
+    final Paint linePaint = Paint()
+      ..color = color
+      ..strokeWidth = 1.3;
+
+    const double innerGap = 6.0;
+    const double outerLen = 34.0;
+
+    // Horizontales
+    canvas.drawLine(Offset(cx - outerLen, cy), Offset(cx - innerGap, cy), lineShadow);
+    canvas.drawLine(Offset(cx + innerGap, cy), Offset(cx + outerLen, cy), lineShadow);
+    canvas.drawLine(Offset(cx - outerLen, cy), Offset(cx - innerGap, cy), linePaint);
+    canvas.drawLine(Offset(cx + innerGap, cy), Offset(cx + outerLen, cy), linePaint);
+
+    // Verticales
+    canvas.drawLine(Offset(cx, cy - outerLen), Offset(cx, cy - innerGap), lineShadow);
+    canvas.drawLine(Offset(cx, cy + innerGap), Offset(cx, cy + outerLen), lineShadow);
+    canvas.drawLine(Offset(cx, cy - outerLen), Offset(cx, cy - innerGap), linePaint);
+    canvas.drawLine(Offset(cx, cy + innerGap), Offset(cx, cy + outerLen), linePaint);
+
+    // 3. "La Punta": Cuatro flechas guía convergentes hacia el centro focal exacto
+    final Paint arrowPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    final Paint arrowBorder = Paint()
+      ..color = Colors.black
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.8;
+
+    // Punta Norte (apunta hacia abajo al centro)
+    final Path northArrow = Path()
+      ..moveTo(cx, cy - 2.0)
+      ..lineTo(cx - 3.5, cy - 7.0)
+      ..lineTo(cx + 3.5, cy - 7.0)
+      ..close();
+    canvas.drawPath(northArrow, arrowPaint);
+    canvas.drawPath(northArrow, arrowBorder);
+
+    // Punta Sur (apunta hacia arriba al centro)
+    final Path southArrow = Path()
+      ..moveTo(cx, cy + 2.0)
+      ..lineTo(cx - 3.5, cy + 7.0)
+      ..lineTo(cx + 3.5, cy + 7.0)
+      ..close();
+    canvas.drawPath(southArrow, arrowPaint);
+    canvas.drawPath(southArrow, arrowBorder);
+
+    // Punta Oeste (apunta hacia la derecha al centro)
+    final Path westArrow = Path()
+      ..moveTo(cx - 2.0, cy)
+      ..lineTo(cx - 7.0, cy - 3.5)
+      ..lineTo(cx - 7.0, cy + 3.5)
+      ..close();
+    canvas.drawPath(westArrow, arrowPaint);
+    canvas.drawPath(westArrow, arrowBorder);
+
+    // Punta Este (apunta hacia la izquierda al centro)
+    final Path eastArrow = Path()
+      ..moveTo(cx + 2.0, cy)
+      ..lineTo(cx + 7.0, cy - 3.5)
+      ..lineTo(cx + 7.0, cy + 3.5)
+      ..close();
+    canvas.drawPath(eastArrow, arrowPaint);
+    canvas.drawPath(eastArrow, arrowBorder);
+
+    // 4. Punto central focal de alta visibilidad (Punto blanco con contorno negro)
+    final Paint centerDot = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+    final Paint centerBorder = Paint()
+      ..color = Colors.black
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+
+    canvas.drawCircle(Offset(cx, cy), 1.6, centerDot);
+    canvas.drawCircle(Offset(cx, cy), 1.6, centerBorder);
   }
 
   @override

@@ -7,6 +7,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
@@ -392,6 +393,17 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
   Offset? _cotaDragCurrent;
   bool _showLoupe = false;
 
+  // Lupa táctica y retícula militar
+  Offset? _loupeFocalPoint;
+  String _loupeLabel = 'ORIGEN (A)';
+  Color _loupeAccentColor = const Color(0xFF00E676);
+
+  // Flujo guiado en 2 pasos con lupa (Paso 1: Origen A, Paso 2: Destino B)
+  Offset? _guidedOriginA;
+  Offset? _guidedTargetB;
+  bool _isGuidingOriginA = false;
+  bool _isGuidingDestinationB = false;
+
   /// Extrae materiales de canalización / tubería colocados como pines en la foto para el selector contextual
   List<String> _getContextualConduitMaterials() {
     final List<String> result = [];
@@ -411,7 +423,6 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
   }
 
   // Cota seleccionada para centrado y edición de manijas A (Origen) y B (Destino)
-  Offset? _loupeFocalPoint;
   String? _selectedMeasurementId;
   bool _isDraggingHandleA = false;
   bool _isDraggingHandleB = false;
@@ -706,6 +717,97 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
             ),
           );
         },
+      ),
+    );
+  }
+
+  /// Banner flotante de asistencia técnica para el guiado milimétrico de cotas
+  Widget _buildMeasurementStepGuidanceBanner() {
+    if (_selectedMeasurementId != null) {
+      return const SizedBox.shrink();
+    }
+    if (_guidedOriginA != null) {
+      return Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: const Color(0xFF001F2F).withValues(alpha: 0.94),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFF00E676), width: 1.5),
+            boxShadow: const [
+              BoxShadow(color: Colors.black54, blurRadius: 8, offset: Offset(0, 2)),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.touch_app, color: Color(0xFF00E676), size: 16),
+              const SizedBox(width: 6),
+              const Text(
+                'Paso 2: Mantén presionado y guía hasta el Destino (B)',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(width: 8),
+              InkWell(
+                onTap: () {
+                  setState(() {
+                    _guidedOriginA = null;
+                    _guidedTargetB = null;
+                  });
+                  HapticFeedback.lightImpact();
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent.withValues(alpha: 0.35),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.close, size: 12, color: Colors.white),
+                      SizedBox(width: 2),
+                      Text('Cancelar', style: TextStyle(color: Colors.white, fontSize: 10)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        decoration: BoxDecoration(
+          color: const Color(0xFF001F2F).withValues(alpha: 0.90),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFFE3A51A), width: 1.2),
+          boxShadow: const [
+            BoxShadow(color: Colors.black54, blurRadius: 6, offset: Offset(0, 2)),
+          ],
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.track_changes, color: Color(0xFFE3A51A), size: 16),
+            SizedBox(width: 6),
+            Text(
+              'Paso 1: Mantén presionado y guía la lupa hasta el Origen (A)',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -3177,6 +3279,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                                     // Primer tap: seleccionar y mostrar manijas A y B para centrado
                                     setState(() {
                                       _selectedMeasurementId = hitM.id;
+                                      _guidedOriginA = null;
                                     });
                                   }
                                 } else {
@@ -3199,6 +3302,8 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                                           _isDraggingHandleA = true;
                                           _showLoupe = true;
                                           _loupeFocalPoint = sel.startOffset;
+                                          _loupeLabel = 'AJUSTE A';
+                                          _loupeAccentColor = const Color(0xFF00E676);
                                         });
                                         return;
                                       }
@@ -3207,6 +3312,8 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                                           _isDraggingHandleB = true;
                                           _showLoupe = true;
                                           _loupeFocalPoint = sel.endOffset;
+                                          _loupeLabel = 'AJUSTE B';
+                                          _loupeAccentColor = const Color(0xFF00E676);
                                         });
                                         return;
                                       }
@@ -3224,6 +3331,8 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                                           _isDraggingHandleA = true;
                                           _showLoupe = true;
                                           _loupeFocalPoint = hitM.startOffset;
+                                          _loupeLabel = 'AJUSTE A';
+                                          _loupeAccentColor = const Color(0xFF00E676);
                                         });
                                         return;
                                       } else if (distB <= 36.0) {
@@ -3232,24 +3341,42 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                                           _isDraggingHandleB = true;
                                           _showLoupe = true;
                                           _loupeFocalPoint = hitM.endOffset;
+                                          _loupeLabel = 'AJUSTE B';
+                                          _loupeAccentColor = const Color(0xFF00E676);
                                         });
                                         return;
                                       } else {
                                         setState(() {
                                           _selectedMeasurementId = hitM.id;
+                                          _guidedOriginA = null;
                                         });
                                         return;
                                       }
                                     }
 
-                                    // 3. Trazar nueva cota si tocó en espacio libre
-                                    setState(() {
-                                      _selectedMeasurementId = null;
-                                      _cotaDragStart = tap;
-                                      _cotaDragCurrent = tap;
-                                      _showLoupe = true;
-                                      _loupeFocalPoint = tap;
-                                    });
+                                    // 3. Flujo guiado con Lupa y Retícula:
+                                    if (_guidedOriginA == null) {
+                                      // PASO 1: Iniciar guiado del Origen (A)
+                                      setState(() {
+                                        _selectedMeasurementId = null;
+                                        _isGuidingOriginA = true;
+                                        _showLoupe = true;
+                                        _loupeFocalPoint = tap;
+                                        _loupeLabel = 'ORIGEN (A)';
+                                        _loupeAccentColor = const Color(0xFF00E676);
+                                      });
+                                    } else {
+                                      // PASO 2: Iniciar guiado del Destino (B) con cota elástica desde A
+                                      setState(() {
+                                        _selectedMeasurementId = null;
+                                        _isGuidingDestinationB = true;
+                                        _showLoupe = true;
+                                        _loupeFocalPoint = tap;
+                                        _guidedTargetB = tap;
+                                        _loupeLabel = 'DESTINO (B)';
+                                        _loupeAccentColor = const Color(0xFF38BDF8);
+                                      });
+                                    }
                                   }
                                 : null,
                             onPanUpdate: _overlayMode == OverlayDisplayMode.medidas
@@ -3271,10 +3398,14 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                                           _loupeFocalPoint = pos;
                                         });
                                       }
-                                    } else if (_cotaDragStart != null) {
+                                    } else if (_isGuidingOriginA) {
                                       setState(() {
-                                        _cotaDragCurrent = pos;
                                         _loupeFocalPoint = pos;
+                                      });
+                                    } else if (_isGuidingDestinationB) {
+                                      setState(() {
+                                        _loupeFocalPoint = pos;
+                                        _guidedTargetB = pos;
                                       });
                                     }
                                   }
@@ -3288,47 +3419,65 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                                         _showLoupe = false;
                                         _loupeFocalPoint = null;
                                       });
+                                      HapticFeedback.lightImpact();
                                       return;
                                     }
 
-                                    final start = _cotaDragStart;
-                                    final end = _cotaDragCurrent;
-                                    setState(() {
-                                      _showLoupe = false;
-                                      _loupeFocalPoint = null;
-                                      _cotaDragStart = null;
-                                      _cotaDragCurrent = null;
-                                    });
+                                    if (_isGuidingOriginA) {
+                                      // Fijar el Punto A (Origen)
+                                      final fixedA = _loupeFocalPoint;
+                                      setState(() {
+                                        _isGuidingOriginA = false;
+                                        _showLoupe = false;
+                                        _loupeFocalPoint = null;
+                                        _guidedOriginA = fixedA;
+                                      });
+                                      HapticFeedback.mediumImpact();
+                                      return;
+                                    }
 
-                                    if (start != null && end != null) {
-                                      final dx = end.dx - start.dx;
-                                      final dy = end.dy - start.dy;
-                                      final distance = math.sqrt(dx * dx + dy * dy);
-                                      if (distance > 15) {
-                                        final result = await showDialog<MeasurementModalResult>(
-                                          context: context,
-                                          builder: (ctx) => MeasurementCaptureModal(
-                                            start: start,
-                                            end: end,
-                                            contextualConduits: _getContextualConduitMaterials(),
-                                            voiceService: _voiceService,
-                                          ),
-                                        );
-                                        if (result != null && result.action == MeasurementModalAction.saved && result.measurement != null) {
-                                          setState(() {
-                                            _linearMeasurements.add(result.measurement!);
-                                            _selectedMeasurementId = result.measurement!.id; // Manijas A y B listas para micro-ajuste!
-                                          });
-                                          if (mounted) {
-                                            ScaffoldMessenger.of(context).showSnackBar(
-                                              const SnackBar(
-                                                content: Text(
-                                                  '✓ Cota registrada. Arrastra las manijas A o B con la lupa si deseas centrar los bordes.',
+                                    if (_isGuidingDestinationB && _guidedOriginA != null) {
+                                      final start = _guidedOriginA!;
+                                      final end = _guidedTargetB ?? _loupeFocalPoint;
+                                      setState(() {
+                                        _isGuidingDestinationB = false;
+                                        _showLoupe = false;
+                                        _loupeFocalPoint = null;
+                                        _guidedOriginA = null;
+                                        _guidedTargetB = null;
+                                      });
+                                      HapticFeedback.mediumImpact();
+
+                                      if (end != null) {
+                                        final dx = end.dx - start.dx;
+                                        final dy = end.dy - start.dy;
+                                        final distance = math.sqrt(dx * dx + dy * dy);
+                                        if (distance > 15) {
+                                          final result = await showDialog<MeasurementModalResult>(
+                                            context: context,
+                                            builder: (ctx) => MeasurementCaptureModal(
+                                              start: start,
+                                              end: end,
+                                              contextualConduits: _getContextualConduitMaterials(),
+                                              voiceService: _voiceService,
+                                            ),
+                                          );
+                                          if (result != null && result.action == MeasurementModalAction.saved && result.measurement != null) {
+                                            setState(() {
+                                              _linearMeasurements.add(result.measurement!);
+                                              _selectedMeasurementId = result.measurement!.id; // Manijas A y B listas para micro-ajuste!
+                                            });
+                                            if (mounted) {
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                const SnackBar(
+                                                  content: Text(
+                                                    '✓ Cota registrada. Arrastra las manijas A o B con la lupa si deseas reajustar los bordes.',
+                                                  ),
+                                                  backgroundColor: Color(0xFF10B981),
+                                                  duration: Duration(seconds: 2),
                                                 ),
-                                                backgroundColor: Color(0xFF10B981),
-                                                duration: Duration(seconds: 2),
-                                              ),
-                                            );
+                                              );
+                                            }
                                           }
                                         }
                                       }
@@ -3437,7 +3586,8 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                                       measurements: _linearMeasurements,
                                       selectedMeasurementId: _selectedMeasurementId,
                                       currentStart: _cotaDragStart,
-                                      currentEnd: _cotaDragCurrent,
+                                      currentEnd: _cotaDragCurrent ?? _guidedTargetB,
+                                      guidedOriginA: _guidedOriginA,
                                       activeMaterial:
                                           _getContextualConduitMaterials()
                                                   .isNotEmpty
@@ -3446,11 +3596,20 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                                               : null,
                                     ),
                                   ),
-                                  if (_showLoupe && (_loupeFocalPoint != null || _cotaDragCurrent != null))
+                                  if (_showLoupe && _loupeFocalPoint != null)
                                     LoupeMagnifierWidget(
-                                      touchPosition: _loupeFocalPoint ?? _cotaDragCurrent!,
+                                      touchPosition: _loupeFocalPoint!,
                                       canvasSize: MediaQuery.of(context).size,
+                                      label: _loupeLabel,
+                                      accentColor: _loupeAccentColor,
                                     ),
+                                  // Cápsula flotante de asistencia técnica sobre la fotografía
+                                  Positioned(
+                                    bottom: 8,
+                                    left: 12,
+                                    right: 12,
+                                    child: _buildMeasurementStepGuidanceBanner(),
+                                  ),
                                 ],
                               ],
                             ),
