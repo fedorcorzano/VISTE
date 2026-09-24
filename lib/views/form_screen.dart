@@ -176,9 +176,13 @@ class _FormScreenState extends State<FormScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
       appBar: AppBar(
-        title: const Text(
-          'VISTE • Relevamiento de Información',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+        title: const FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
+            'VISTE • Relevamiento de Información',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+          ),
         ),
         backgroundColor: const Color(0xFF1E293B),
         foregroundColor: Colors.white,
@@ -336,63 +340,84 @@ class _FormScreenState extends State<FormScreen> {
 
                 // Dropdown Proyecto desde Excel
                 Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1E293B),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: const Color(0xFF475569),
-                            width: 1,
-                          ),
-                        ),
-                        child: DropdownButtonFormField<String>(
-                          key: ValueKey(_selectedProyecto),
-                          initialValue: _selectedProyecto,
-                          dropdownColor: const Color(0xFF1E293B),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                          ),
-                          decoration: const InputDecoration(
-                            labelText: 'Tipo de Proyecto (desde Excel)',
-                            labelStyle: TextStyle(
-                              color: Color(0xFF38BDF8),
-                              fontSize: 13,
-                            ),
-                            prefixIcon: Icon(
-                              Icons.work_outline,
-                              color: Color(0xFF38BDF8),
-                            ),
-                            border: InputBorder.none,
-                          ),
-                          items: _proyectosList.map((p) {
-                            return DropdownMenuItem(
-                              value: p,
-                              child: Text(
-                                p,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            );
-                          }).toList(),
-                          onChanged: (val) =>
-                              setState(() => _selectedProyecto = val),
-                        ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E293B),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: const Color(0xFF475569),
+                      width: 1,
+                    ),
+                  ),
+                  child: DropdownButtonFormField<String>(
+                    key: ValueKey(_selectedProyecto),
+                    initialValue: _selectedProyecto,
+                    isExpanded: true,
+                    dropdownColor: const Color(0xFF1E293B),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Tipo de Proyecto (desde Excel)',
+                      labelStyle: TextStyle(
+                        color: Color(0xFF38BDF8),
+                        fontSize: 13,
                       ),
+                      prefixIcon: Icon(
+                        Icons.work_outline,
+                        color: Color(0xFF38BDF8),
+                      ),
+                      border: InputBorder.none,
+                    ),
+                    selectedItemBuilder: (BuildContext context) {
+                      return _proyectosList.map<Widget>((String item) {
+                        return Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            item,
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                            ),
+                          ),
+                        );
+                      }).toList();
+                    },
+                    items: _proyectosList.map((p) {
+                      return DropdownMenuItem<String>(
+                        value: p,
+                        child: Text(
+                          p,
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (val) =>
+                        setState(() => _selectedProyecto = val),
+                  ),
+                ),
                 const SizedBox(height: 30),
 
                 // Botón Siguiente: Avanzar a Sesión de Fotos
                 ElevatedButton.icon(
                   onPressed: _avanzarACamara,
                   icon: const Icon(Icons.photo_camera, size: 22, color: Color(0xFF001F2F)),
-                  label: const Text(
-                    'Iniciar Sesión de Fotos (Proyecto) 📸',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF001F2F),
+                  label: const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      'Iniciar Sesión de Fotos (Proyecto) 📸',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF001F2F),
+                      ),
                     ),
                   ),
                   style: ElevatedButton.styleFrom(
