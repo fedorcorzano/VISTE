@@ -393,9 +393,8 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
   Offset? _cotaDragCurrent;
   bool _showLoupe = false;
 
-  // Lupa táctica y retícula militar
+  // Lupa de magnificación flotante
   Offset? _loupeFocalPoint;
-  String _loupeLabel = 'ORIGEN (A)';
   Color _loupeAccentColor = const Color(0xFF00E676);
 
   // Flujo guiado en 2 pasos con lupa (Paso 1: Origen A, Paso 2: Destino B)
@@ -3441,7 +3440,6 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                                             _isDraggingHandleA = true;
                                             _showLoupe = true;
                                             _loupeFocalPoint = sel.startOffset;
-                                            _loupeLabel = 'AJUSTE A';
                                             _loupeAccentColor = const Color(0xFF00E676);
                                           });
                                           return;
@@ -3451,7 +3449,6 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                                             _isDraggingHandleB = true;
                                             _showLoupe = true;
                                             _loupeFocalPoint = sel.endOffset;
-                                            _loupeLabel = 'AJUSTE B';
                                             _loupeAccentColor = const Color(0xFF00E676);
                                           });
                                           return;
@@ -3470,7 +3467,6 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                                             _isDraggingHandleA = true;
                                             _showLoupe = true;
                                             _loupeFocalPoint = hitM.startOffset;
-                                            _loupeLabel = 'AJUSTE A';
                                             _loupeAccentColor = const Color(0xFF00E676);
                                           });
                                           return;
@@ -3480,7 +3476,6 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                                             _isDraggingHandleB = true;
                                             _showLoupe = true;
                                             _loupeFocalPoint = hitM.endOffset;
-                                            _loupeLabel = 'AJUSTE B';
                                             _loupeAccentColor = const Color(0xFF00E676);
                                           });
                                           return;
@@ -3501,7 +3496,6 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                                           _isGuidingOriginA = true;
                                           _showLoupe = true;
                                           _loupeFocalPoint = tap;
-                                          _loupeLabel = 'ORIGEN (A)';
                                           _loupeAccentColor = const Color(0xFF00E676);
                                         });
                                       } else {
@@ -3512,7 +3506,6 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                                           _showLoupe = true;
                                           _loupeFocalPoint = tap;
                                           _guidedTargetB = tap;
-                                          _loupeLabel = 'DESTINO (B)';
                                           _loupeAccentColor = const Color(0xFF38BDF8);
                                         });
                                       }
@@ -3631,7 +3624,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                                       LoupeMagnifierWidget(
                                         touchPosition: _loupeFocalPoint!,
                                         canvasSize: MediaQuery.of(context).size,
-                                        label: _loupeLabel,
+                                        label: null,
                                         accentColor: _loupeAccentColor,
                                       ),
                                     // Cápsula flotante de asistencia técnica sobre la fotografía

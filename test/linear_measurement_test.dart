@@ -244,7 +244,8 @@ void main() {
       await tester.pump();
       expect(find.text('ORIGEN (A)'), findsOneWidget);
       expect(find.byType(RawMagnifier), findsOneWidget);
-      expect(find.byType(CustomPaint), findsWidgets);
+      // RawMagnifier utiliza exactamente 1 CustomPaint interno para el borde circular, sin retículas adicionales
+      expect(find.byType(CustomPaint), findsOneWidget);
     });
   });
 }

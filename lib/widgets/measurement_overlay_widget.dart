@@ -309,7 +309,7 @@ class MeasurementLinesPainter extends CustomPainter {
   }
 }
 
-/// Lupa de magnificación flotante de alta precisión con puntero táctico y compensación exacta de focalPointOffset
+/// Lupa de magnificación flotante pura: sólo lente amplificador cristalino sin elementos adicionales ni opacidad
 class LoupeMagnifierWidget extends StatelessWidget {
   final Offset touchPosition;
   final Size canvasSize;
@@ -337,7 +337,6 @@ class LoupeMagnifierWidget extends StatelessWidget {
     loupeX = loupeX.clamp(10.0, math.max(10.0, canvasSize.width - loupeDiameter - 10.0));
     bool invertedBelow = false;
     if (loupeY < 32.0) {
-      // Si el punto está pegado al borde superior, invertir la lupa debajo del dedo
       loupeY = touchPosition.dy + 45.0;
       invertedBelow = true;
     }
@@ -359,47 +358,20 @@ class LoupeMagnifierWidget extends StatelessWidget {
             clipBehavior: Clip.none,
             alignment: Alignment.center,
             children: [
-              // 1. Lente amplificador circular 100% nítido (SIN recortes dobles ni sombras internas)
-              Container(
-                width: loupeDiameter,
-                height: loupeDiameter,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: accentColor, width: 2.2),
-                  boxShadow: [
-                    BoxShadow(
-                      color: accentColor.withValues(alpha: 0.35),
-                      blurRadius: 10,
-                      spreadRadius: 1,
-                    ),
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.4),
-                      blurRadius: 8,
-                      spreadRadius: 1,
-                    ),
-                  ],
+              // Lente de aumento 100% puro: cristal limpio sin líneas interiores, sin opacidad ni sombras
+              RawMagnifier(
+                decoration: MagnifierDecoration(
+                  shape: CircleBorder(
+                    side: BorderSide(color: accentColor, width: 2.4),
+                  ),
+                  shadows: const [],
                 ),
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    RawMagnifier(
-                      decoration: const MagnifierDecoration(
-                        shape: CircleBorder(),
-                      ),
-                      size: const Size(loupeDiameter, loupeDiameter),
-                      magnificationScale: 2.4,
-                      focalPointOffset: focalOffset,
-                    ),
-                    // Retícula táctica de ultra-precisión (SIN línea ecuatorial ni oscurecimiento)
-                    CustomPaint(
-                      size: const Size(loupeDiameter, loupeDiameter),
-                      painter: CrosshairReticlePainter(color: accentColor),
-                    ),
-                  ],
-                ),
+                size: const Size(loupeDiameter, loupeDiameter),
+                magnificationScale: 2.2,
+                focalPointOffset: focalOffset,
               ),
 
-              // 2. Etiqueta flotante con el paso activo colocada COMPLETAMENTE FUERA del lente
+              // Etiqueta flotante externa opcional
               if (label != null)
                 Positioned(
                   top: invertedBelow ? loupeDiameter + 6 : -22,
@@ -409,36 +381,15 @@ class LoupeMagnifierWidget extends StatelessWidget {
                       color: const Color(0xFF001F2F),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: accentColor, width: 1.2),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.6),
-                          blurRadius: 6,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 6,
-                          height: 6,
-                          decoration: BoxDecoration(
-                            color: accentColor,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 5),
-                        Text(
-                          label!,
-                          style: TextStyle(
-                            color: accentColor,
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                      ],
+                    child: Text(
+                      label!,
+                      style: TextStyle(
+                        color: accentColor,
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.5,
+                      ),
                     ),
                   ),
                 ),
@@ -448,79 +399,6 @@ class LoupeMagnifierWidget extends StatelessWidget {
       ),
     );
   }
-}
-
-/// Dibuja la retícula técnica militar con puntero central ("la punta") lista para alinear al milímetro.
-/// 100% Despejada: SIN línea ecuatorial divisoria ni zonas sombreadas en la parte superior.
-class CrosshairReticlePainter extends CustomPainter {
-  final Color color;
-
-  const CrosshairReticlePainter({this.color = const Color(0xFF00E676)});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final double cx = size.width / 2;
-    final double cy = size.height / 2;
-
-    // 1. Círculo exterior táctico sutil y limpio
-    final Paint circlePaint = Paint()
-      ..color = color.withValues(alpha: 0.45)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0;
-    canvas.drawCircle(Offset(cx, cy), 36.0, circlePaint);
-
-    // 2. Guías exteriores de alineación en los 4 extremos (N, S, E, O)
-    // Dejando un radio central de 18px COMPLETAMENTE ABIERTO Y DESPEJADO
-    // para que el punto y borde a señalar sean 100% visibles sin ninguna línea horizontal divisoria.
-    final Paint guideLinePaint = Paint()
-      ..color = color
-      ..strokeWidth = 1.2
-      ..style = PaintingStyle.stroke;
-    final Paint guideShadowPaint = Paint()
-      ..color = Colors.black.withValues(alpha: 0.6)
-      ..strokeWidth = 2.2
-      ..style = PaintingStyle.stroke;
-
-    const double innerClearRadius = 18.0;
-    const double outerGuideRadius = 38.0;
-
-    // Horizontales (Oeste y Este): Ticks guía exteriores únicamente en los extremos
-    // (¡NUNCA una línea continua que cruce el ecuador cy!)
-    canvas.drawLine(Offset(cx - outerGuideRadius, cy), Offset(cx - innerClearRadius, cy), guideShadowPaint);
-    canvas.drawLine(Offset(cx - outerGuideRadius, cy), Offset(cx - innerClearRadius, cy), guideLinePaint);
-    canvas.drawLine(Offset(cx + innerClearRadius, cy), Offset(cx + outerGuideRadius, cy), guideShadowPaint);
-    canvas.drawLine(Offset(cx + innerClearRadius, cy), Offset(cx + outerGuideRadius, cy), guideLinePaint);
-
-    // Verticales (Norte y Sur): Ticks guía exteriores
-    canvas.drawLine(Offset(cx, cy - outerGuideRadius), Offset(cx, cy - innerClearRadius), guideShadowPaint);
-    canvas.drawLine(Offset(cx, cy - outerGuideRadius), Offset(cx, cy - innerClearRadius), guideLinePaint);
-    canvas.drawLine(Offset(cx, cy + innerClearRadius), Offset(cx, cy + outerGuideRadius), guideShadowPaint);
-    canvas.drawLine(Offset(cx, cy + innerClearRadius), Offset(cx, cy + outerGuideRadius), guideLinePaint);
-
-    // 3. Punteros micro-guía hacia el centro focal (longitud 3.5px, radio 4.5px a 8px)
-    final Paint microTickPaint = Paint()
-      ..color = color
-      ..strokeWidth = 1.0;
-    canvas.drawLine(Offset(cx, cy - 8.0), Offset(cx, cy - 4.5), microTickPaint);
-    canvas.drawLine(Offset(cx, cy + 4.5), Offset(cx, cy + 8.0), microTickPaint);
-    canvas.drawLine(Offset(cx - 8.0, cy), Offset(cx - 4.5, cy), microTickPaint);
-    canvas.drawLine(Offset(cx + 4.5, cy), Offset(cx + 8.0, cy), microTickPaint);
-
-    // 4. Punto central focal de alta visibilidad (Punto blanco puro con contorno negro)
-    final Paint centerDot = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.fill;
-    final Paint centerBorder = Paint()
-      ..color = Colors.black
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0;
-
-    canvas.drawCircle(Offset(cx, cy), 1.6, centerDot);
-    canvas.drawCircle(Offset(cx, cy), 1.6, centerBorder);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 /// Resultado de la acción del modal de captura / edición
