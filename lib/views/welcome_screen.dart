@@ -201,26 +201,29 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                                       ),
                                     ),
                                     onPressed: () => _onOpenHistory(autoFocusSearch: false),
-                                    child: const Column(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        Icon(
-                                          Icons.folder_shared_outlined,
-                                          size: 16,
-                                          color: Color(0xFFE3A51A), // COLOR 02 AMARILLO VIGILARTE
-                                        ),
-                                        SizedBox(height: 2),
-                                        Text(
-                                          'Mis proyectos',
-                                          style: TextStyle(
-                                            fontSize: 10.5,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.white,
+                                    child: const FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      child: Column(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Icon(
+                                            Icons.folder_shared_outlined,
+                                            size: 16,
+                                            color: Color(0xFFE3A51A), // COLOR 02 AMARILLO VIGILARTE
                                           ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ],
+                                          SizedBox(height: 2),
+                                          Text(
+                                            'Mis proyectos',
+                                            style: TextStyle(
+                                              fontSize: 10.5,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.white,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -308,26 +311,29 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                                       ),
                                     ),
                                     onPressed: () => _onOpenHistory(autoFocusSearch: true),
-                                    child: const Column(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        Icon(
-                                          Icons.search_rounded,
-                                          size: 16,
-                                          color: Color(0xFF001F2F), // AZUL
-                                        ),
-                                        SizedBox(height: 2),
-                                        Text(
-                                          'Buscar proyectos',
-                                          style: TextStyle(
-                                            fontSize: 10.5,
-                                            fontWeight: FontWeight.bold,
-                                            color: Color(0xFF001F2F),
+                                    child: const FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      child: Column(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Icon(
+                                            Icons.search_rounded,
+                                            size: 16,
+                                            color: Color(0xFF001F2F), // AZUL
                                           ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ],
+                                          SizedBox(height: 2),
+                                          Text(
+                                            'Buscar proyectos',
+                                            style: TextStyle(
+                                              fontSize: 10.5,
+                                              fontWeight: FontWeight.bold,
+                                              color: Color(0xFF001F2F),
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ),
                                 ),

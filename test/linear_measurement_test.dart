@@ -6,6 +6,8 @@ import 'package:vistec/models/project_model.dart';
 import 'package:vistec/models/session_evidence_model.dart';
 import 'package:vistec/services/project_manager_report_pdf_service.dart';
 import 'package:vistec/services/purchasing_report_pdf_service.dart';
+import 'package:vistec/services/voice_recognition_service.dart';
+import 'package:vistec/widgets/measurement_overlay_widget.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -191,6 +193,58 @@ void main() {
       final pdfBytes = await PurchasingReportPdfService.generatePdf(session);
       expect(pdfBytes, isNotNull);
       expect(pdfBytes.length, greaterThan(1000));
+    });
+  });
+
+  group('UI / Optical Clarity Tests', () {
+    testWidgets('MeasurementCaptureModal renders without overflow in constrained view', (tester) async {
+      tester.view.physicalSize = const Size(400, 500);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: MeasurementCaptureModal(
+              start: const Offset(10, 10),
+              end: const Offset(100, 100),
+              contextualConduits: const ['Tubo EMT 3/4"'],
+              voiceService: VoiceRecognitionService(),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump();
+      expect(find.text('Registrar Cota de Medida'), findsOneWidget);
+      expect(find.byType(SingleChildScrollView), findsWidgets);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('LoupeMagnifierWidget renders with external step badge', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: Stack(
+              children: [
+                LoupeMagnifierWidget(
+                  touchPosition: Offset(200, 200),
+                  canvasSize: Size(400, 800),
+                  label: 'ORIGEN (A)',
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump();
+      expect(find.text('ORIGEN (A)'), findsOneWidget);
+      expect(find.byType(RawMagnifier), findsOneWidget);
+      expect(find.byType(CustomPaint), findsWidgets);
     });
   });
 }

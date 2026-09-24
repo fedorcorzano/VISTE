@@ -2333,7 +2333,20 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
 
       // 2.2 Si hay cotas/medidas trazadas, capturar la imagen exclusiva de MEDIDAS (con pines ocultos)
       if (_linearMeasurements.isNotEmpty) {
-        setState(() => _overlayMode = OverlayDisplayMode.medidas);
+        setState(() {
+          _overlayMode = OverlayDisplayMode.medidas;
+          _selectedMeasurementId = null;
+          _showLoupe = false;
+          _loupeFocalPoint = null;
+          _guidedOriginA = null;
+          _guidedTargetB = null;
+          _cotaDragStart = null;
+          _cotaDragCurrent = null;
+          _isGuidingOriginA = false;
+          _isGuidingDestinationB = false;
+          _isDraggingHandleA = false;
+          _isDraggingHandleB = false;
+        });
         await Future.delayed(const Duration(milliseconds: 40));
         ui.Image measImg = await boundary.toImage(pixelRatio: targetRatio);
         ByteData? measBd = await measImg.toByteData(
@@ -2417,83 +2430,85 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
             ),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Proyecto: ${widget.project.proyecto}',
-              style: const TextStyle(
-                color: Colors.white70,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Proyecto: ${widget.project.proyecto}',
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'Nombre de Área / Sector (Opcional):',
-              style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
-            ),
-            const SizedBox(height: 6),
-            TextField(
-              controller: areaController,
-              autofocus: true,
-              style: const TextStyle(color: Colors.white, fontSize: 13),
-              decoration: InputDecoration(
-                hintText:
-                    'Ej. Fachada Principal (Defecto: Foto #$_sessionPhotoNumber)',
-                hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
-                filled: true,
-                fillColor: const Color(0xFF0F172A),
-                border: OutlineInputBorder(
+              const SizedBox(height: 12),
+              const Text(
+                'Nombre de Área / Sector (Opcional):',
+                style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+              ),
+              const SizedBox(height: 6),
+              TextField(
+                controller: areaController,
+                autofocus: true,
+                style: const TextStyle(color: Colors.white, fontSize: 13),
+                decoration: InputDecoration(
+                  hintText:
+                      'Ej. Fachada Principal (Defecto: Foto #$_sessionPhotoNumber)',
+                  hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
+                  filled: true,
+                  fillColor: const Color(0xFF0F172A),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              // Mini resumen de vinculaciones
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F172A),
                   borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide.none,
+                  border: Border.all(color: const Color(0xFF334155)),
                 ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '📍 Pines colocados: ${_placedStickers.length}',
+                      style: const TextStyle(
+                        color: Color(0xFF38BDF8),
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '🔩 Accesorios deducidos: ${TechnicalCatalogMatrix.deduceAccesorios(materiales: _placedStickers.where((s) => s.sticker.category == StickerCategory.materiales).map((s) => s.sticker.title)).length}',
+                      style: const TextStyle(
+                        color: Color(0xFF4ADE80),
+                        fontSize: 11,
+                      ),
+                    ),
+                    Text(
+                      '🛠️ Herramientas deducidas: ${TechnicalCatalogMatrix.deduceHerramientas(estructuras: _placedStickers.where((s) => s.sticker.category == StickerCategory.estructuras).map((s) => s.sticker.title), materiales: _placedStickers.where((s) => s.sticker.category == StickerCategory.materiales).map((s) => s.sticker.title)).length}',
+                      style: const TextStyle(
+                        color: Color(0xFF38BDF8),
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ),
-            const SizedBox(height: 14),
-            // Mini resumen de vinculaciones
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0F172A),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFF334155)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '📍 Pines colocados: ${_placedStickers.length}',
-                    style: const TextStyle(
-                      color: Color(0xFF38BDF8),
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '🔩 Accesorios deducidos: ${TechnicalCatalogMatrix.deduceAccesorios(materiales: _placedStickers.where((s) => s.sticker.category == StickerCategory.materiales).map((s) => s.sticker.title)).length}',
-                    style: const TextStyle(
-                      color: Color(0xFF4ADE80),
-                      fontSize: 11,
-                    ),
-                  ),
-                  Text(
-                    '🛠️ Herramientas deducidas: ${TechnicalCatalogMatrix.deduceHerramientas(estructuras: _placedStickers.where((s) => s.sticker.category == StickerCategory.estructuras).map((s) => s.sticker.title), materiales: _placedStickers.where((s) => s.sticker.category == StickerCategory.materiales).map((s) => s.sticker.title)).length}',
-                    style: const TextStyle(
-                      color: Color(0xFF38BDF8),
-                      fontSize: 11,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -3252,368 +3267,385 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                     child: Center(
                       child: AspectRatio(
                         aspectRatio: _imageAspectRatio,
-                        child: RepaintBoundary(
-                          key: _repaintBoundaryKey,
-                          child: GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTapUp: (details) {
-                              if (_overlayMode == OverlayDisplayMode.pines) {
-                                // Centrar el pin en el punto exacto del toque
-                                final Offset tapPosition = Offset(
-                                  details.localPosition.dx,
-                                  details.localPosition.dy,
-                                );
-                                _openStickerSelector(
-                                  title: 'Añadir Pin #${_placedStickers.length + 1}',
-                                  initialPosition: tapPosition,
-                                );
-                              } else if (_overlayMode == OverlayDisplayMode.medidas) {
-                                // Verificar si tocó una cota para seleccionarla o editarla
-                                final hitIndex = _findHitMeasurementIndex(details.localPosition);
-                                if (hitIndex != null) {
-                                  final hitM = _linearMeasurements[hitIndex];
-                                  if (_selectedMeasurementId == hitM.id) {
-                                    // Segundo tap sobre la cota seleccionada: abrir edición
-                                    _openEditMeasurementModal(hitM);
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            // 1. REPAINT BOUNDARY: Exclusivo para exportación de foto limpia
+                            // (Contiene solo la imagen base, marca de agua y pines o cotas con flechas)
+                            RepaintBoundary(
+                              key: _repaintBoundaryKey,
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  Image.memory(
+                                    _capturedImageBytes!,
+                                    fit: BoxFit.fill,
+                                  ),
+
+                                  // Marca de agua técnica ultra-compacta (mínima altura y fuentes pequeñas)
+                                  Positioned(
+                                    top: 6,
+                                    left: 6,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 5,
+                                        vertical: 2.5,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withValues(
+                                          alpha: 0.75,
+                                        ),
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(
+                                          color: const Color(0xFF38BDF8)
+                                              .withValues(alpha: 0.7),
+                                          width: 0.6,
+                                        ),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(
+                                                Icons.verified,
+                                                color: Color(0xFF38BDF8),
+                                                size: 8,
+                                              ),
+                                              const SizedBox(width: 3),
+                                              Text(
+                                                'VISTE • ${widget.project.proyecto.toUpperCase()} • FOTO #$_sessionPhotoNumber',
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 7.5,
+                                                  fontWeight: FontWeight.bold,
+                                                  height: 1.0,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 1),
+                                          Text(
+                                            '${widget.project.contacto} | ${widget.project.fecha}',
+                                            style: const TextStyle(
+                                              color: Colors.white70,
+                                              fontSize: 6.5,
+                                              height: 1.0,
+                                            ),
+                                          ),
+                                          if (widget.project.mapa.isNotEmpty &&
+                                              widget.project.mapa !=
+                                                  '0.0, 0.0') ...[
+                                            const SizedBox(height: 0.5),
+                                            Text(
+                                              'GPS: ${widget.project.mapa}',
+                                              style: const TextStyle(
+                                                color: Color(0xFF38BDF8),
+                                                fontSize: 6.5,
+                                                fontWeight: FontWeight.w500,
+                                                height: 1.0,
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+
+                                  // 1. MODO PINES (Visibles únicamente en modo Pines)
+                                  if (_overlayMode == OverlayDisplayMode.pines) ...[
+                                    for (int i = 0; i < _placedStickers.length; i++)
+                                      _buildNumberedPin(_placedStickers[i], i),
+
+                                    if (_placedStickers.isNotEmpty)
+                                      Positioned(
+                                        bottom: 5,
+                                        left: 5,
+                                        right: 5,
+                                        child: _buildInPhotoTranslucentLegend(),
+                                      ),
+                                  ],
+
+                                  // 2. MODO MEDIDAS (ÚNICAMENTE trazos técnicos y cotas con flechas de 2 puntas)
+                                  if (_overlayMode == OverlayDisplayMode.medidas)
+                                    CustomPaint(
+                                      painter: MeasurementLinesPainter(
+                                        measurements: _linearMeasurements,
+                                        selectedMeasurementId: _selectedMeasurementId,
+                                        currentStart: _cotaDragStart,
+                                        currentEnd: _cotaDragCurrent ?? _guidedTargetB,
+                                        guidedOriginA: _guidedOriginA,
+                                        activeMaterial:
+                                            _getContextualConduitMaterials()
+                                                    .isNotEmpty
+                                                ? _getContextualConduitMaterials()
+                                                    .first
+                                                : null,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+
+                            // 2. CAPA INTERACTIVA TÁCTIL Y ASISTENCIA EN VIVO (FUERA del RepaintBoundary)
+                            // Gestiona toques, selección y muestra la lupa flotante y el banner guía.
+                            // NUNCA es capturada por boundary.toImage() al guardar la foto.
+                            GestureDetector(
+                              behavior: HitTestBehavior.translucent,
+                              onTapUp: (details) {
+                                if (_overlayMode == OverlayDisplayMode.pines) {
+                                  // Centrar el pin en el punto exacto del toque
+                                  final Offset tapPosition = Offset(
+                                    details.localPosition.dx,
+                                    details.localPosition.dy,
+                                  );
+                                  _openStickerSelector(
+                                    title: 'Añadir Pin #${_placedStickers.length + 1}',
+                                    initialPosition: tapPosition,
+                                  );
+                                } else if (_overlayMode == OverlayDisplayMode.medidas) {
+                                  // Verificar si tocó una cota para seleccionarla o editarla
+                                  final hitIndex = _findHitMeasurementIndex(details.localPosition);
+                                  if (hitIndex != null) {
+                                    final hitM = _linearMeasurements[hitIndex];
+                                    if (_selectedMeasurementId == hitM.id) {
+                                      // Segundo tap sobre la cota seleccionada: abrir edición
+                                      _openEditMeasurementModal(hitM);
+                                    } else {
+                                      // Primer tap: seleccionar y mostrar manijas A y B para centrado
+                                      setState(() {
+                                        _selectedMeasurementId = hitM.id;
+                                        _guidedOriginA = null;
+                                      });
+                                    }
                                   } else {
-                                    // Primer tap: seleccionar y mostrar manijas A y B para centrado
-                                    setState(() {
-                                      _selectedMeasurementId = hitM.id;
-                                      _guidedOriginA = null;
-                                    });
-                                  }
-                                } else {
-                                  // Tap afuera: deseleccionar
-                                  if (_selectedMeasurementId != null) {
-                                    setState(() => _selectedMeasurementId = null);
+                                    // Tap afuera: deseleccionar
+                                    if (_selectedMeasurementId != null) {
+                                      setState(() => _selectedMeasurementId = null);
+                                    }
                                   }
                                 }
-                              }
-                            },
-                            onPanStart: _overlayMode == OverlayDisplayMode.medidas
-                                ? (details) {
-                                    final tap = details.localPosition;
+                              },
+                              onPanStart: _overlayMode == OverlayDisplayMode.medidas
+                                  ? (details) {
+                                      final tap = details.localPosition;
 
-                                    // 1. Si hay una cota seleccionada, verificar si toca Manija A (Origen) o Manija B (Destino)
-                                    if (_selectedMeasurement != null) {
-                                      final sel = _selectedMeasurement!;
-                                      if ((tap - sel.startOffset).distance <= 36.0) {
-                                        setState(() {
-                                          _isDraggingHandleA = true;
-                                          _showLoupe = true;
-                                          _loupeFocalPoint = sel.startOffset;
-                                          _loupeLabel = 'AJUSTE A';
-                                          _loupeAccentColor = const Color(0xFF00E676);
-                                        });
-                                        return;
+                                      // 1. Si hay una cota seleccionada, verificar si toca Manija A (Origen) o Manija B (Destino)
+                                      if (_selectedMeasurement != null) {
+                                        final sel = _selectedMeasurement!;
+                                        if ((tap - sel.startOffset).distance <= 36.0) {
+                                          setState(() {
+                                            _isDraggingHandleA = true;
+                                            _showLoupe = true;
+                                            _loupeFocalPoint = sel.startOffset;
+                                            _loupeLabel = 'AJUSTE A';
+                                            _loupeAccentColor = const Color(0xFF00E676);
+                                          });
+                                          return;
+                                        }
+                                        if ((tap - sel.endOffset).distance <= 36.0) {
+                                          setState(() {
+                                            _isDraggingHandleB = true;
+                                            _showLoupe = true;
+                                            _loupeFocalPoint = sel.endOffset;
+                                            _loupeLabel = 'AJUSTE B';
+                                            _loupeAccentColor = const Color(0xFF00E676);
+                                          });
+                                          return;
+                                        }
                                       }
-                                      if ((tap - sel.endOffset).distance <= 36.0) {
-                                        setState(() {
-                                          _isDraggingHandleB = true;
-                                          _showLoupe = true;
-                                          _loupeFocalPoint = sel.endOffset;
-                                          _loupeLabel = 'AJUSTE B';
-                                          _loupeAccentColor = const Color(0xFF00E676);
-                                        });
-                                        return;
-                                      }
-                                    }
 
-                                    // 2. Verificar si toca alguna otra cota existente
-                                    final hitIdx = _findHitMeasurementIndex(tap);
-                                    if (hitIdx != null) {
-                                      final hitM = _linearMeasurements[hitIdx];
-                                      final distA = (tap - hitM.startOffset).distance;
-                                      final distB = (tap - hitM.endOffset).distance;
-                                      if (distA <= 36.0) {
+                                      // 2. Verificar si toca alguna otra cota existente
+                                      final hitIdx = _findHitMeasurementIndex(tap);
+                                      if (hitIdx != null) {
+                                        final hitM = _linearMeasurements[hitIdx];
+                                        final distA = (tap - hitM.startOffset).distance;
+                                        final distB = (tap - hitM.endOffset).distance;
+                                        if (distA <= 36.0) {
+                                          setState(() {
+                                            _selectedMeasurementId = hitM.id;
+                                            _isDraggingHandleA = true;
+                                            _showLoupe = true;
+                                            _loupeFocalPoint = hitM.startOffset;
+                                            _loupeLabel = 'AJUSTE A';
+                                            _loupeAccentColor = const Color(0xFF00E676);
+                                          });
+                                          return;
+                                        } else if (distB <= 36.0) {
+                                          setState(() {
+                                            _selectedMeasurementId = hitM.id;
+                                            _isDraggingHandleB = true;
+                                            _showLoupe = true;
+                                            _loupeFocalPoint = hitM.endOffset;
+                                            _loupeLabel = 'AJUSTE B';
+                                            _loupeAccentColor = const Color(0xFF00E676);
+                                          });
+                                          return;
+                                        } else {
+                                          setState(() {
+                                            _selectedMeasurementId = hitM.id;
+                                            _guidedOriginA = null;
+                                          });
+                                          return;
+                                        }
+                                      }
+
+                                      // 3. Flujo guiado con Lupa y Retícula:
+                                      if (_guidedOriginA == null) {
+                                        // PASO 1: Iniciar guiado del Origen (A)
                                         setState(() {
-                                          _selectedMeasurementId = hitM.id;
-                                          _isDraggingHandleA = true;
+                                          _selectedMeasurementId = null;
+                                          _isGuidingOriginA = true;
                                           _showLoupe = true;
-                                          _loupeFocalPoint = hitM.startOffset;
-                                          _loupeLabel = 'AJUSTE A';
+                                          _loupeFocalPoint = tap;
+                                          _loupeLabel = 'ORIGEN (A)';
                                           _loupeAccentColor = const Color(0xFF00E676);
                                         });
-                                        return;
-                                      } else if (distB <= 36.0) {
-                                        setState(() {
-                                          _selectedMeasurementId = hitM.id;
-                                          _isDraggingHandleB = true;
-                                          _showLoupe = true;
-                                          _loupeFocalPoint = hitM.endOffset;
-                                          _loupeLabel = 'AJUSTE B';
-                                          _loupeAccentColor = const Color(0xFF00E676);
-                                        });
-                                        return;
                                       } else {
+                                        // PASO 2: Iniciar guiado del Destino (B) con cota elástica desde A
                                         setState(() {
-                                          _selectedMeasurementId = hitM.id;
-                                          _guidedOriginA = null;
+                                          _selectedMeasurementId = null;
+                                          _isGuidingDestinationB = true;
+                                          _showLoupe = true;
+                                          _loupeFocalPoint = tap;
+                                          _guidedTargetB = tap;
+                                          _loupeLabel = 'DESTINO (B)';
+                                          _loupeAccentColor = const Color(0xFF38BDF8);
                                         });
+                                      }
+                                    }
+                                  : null,
+                              onPanUpdate: _overlayMode == OverlayDisplayMode.medidas
+                                  ? (details) {
+                                      final pos = details.localPosition;
+                                      if (_isDraggingHandleA && _selectedMeasurementId != null) {
+                                        final idx = _linearMeasurements.indexWhere((m) => m.id == _selectedMeasurementId);
+                                        if (idx != -1) {
+                                          setState(() {
+                                            _linearMeasurements[idx] = _linearMeasurements[idx].copyWith(startOffset: pos);
+                                            _loupeFocalPoint = pos;
+                                          });
+                                        }
+                                      } else if (_isDraggingHandleB && _selectedMeasurementId != null) {
+                                        final idx = _linearMeasurements.indexWhere((m) => m.id == _selectedMeasurementId);
+                                        if (idx != -1) {
+                                          setState(() {
+                                            _linearMeasurements[idx] = _linearMeasurements[idx].copyWith(endOffset: pos);
+                                            _loupeFocalPoint = pos;
+                                          });
+                                        }
+                                      } else if (_isGuidingOriginA) {
+                                        setState(() {
+                                          _loupeFocalPoint = pos;
+                                        });
+                                      } else if (_isGuidingDestinationB) {
+                                        setState(() {
+                                          _loupeFocalPoint = pos;
+                                          _guidedTargetB = pos;
+                                        });
+                                      }
+                                    }
+                                  : null,
+                              onPanEnd: _overlayMode == OverlayDisplayMode.medidas
+                                  ? (details) async {
+                                      if (_isDraggingHandleA || _isDraggingHandleB) {
+                                        setState(() {
+                                          _isDraggingHandleA = false;
+                                          _isDraggingHandleB = false;
+                                          _showLoupe = false;
+                                          _loupeFocalPoint = null;
+                                        });
+                                        HapticFeedback.lightImpact();
                                         return;
                                       }
-                                    }
 
-                                    // 3. Flujo guiado con Lupa y Retícula:
-                                    if (_guidedOriginA == null) {
-                                      // PASO 1: Iniciar guiado del Origen (A)
-                                      setState(() {
-                                        _selectedMeasurementId = null;
-                                        _isGuidingOriginA = true;
-                                        _showLoupe = true;
-                                        _loupeFocalPoint = tap;
-                                        _loupeLabel = 'ORIGEN (A)';
-                                        _loupeAccentColor = const Color(0xFF00E676);
-                                      });
-                                    } else {
-                                      // PASO 2: Iniciar guiado del Destino (B) con cota elástica desde A
-                                      setState(() {
-                                        _selectedMeasurementId = null;
-                                        _isGuidingDestinationB = true;
-                                        _showLoupe = true;
-                                        _loupeFocalPoint = tap;
-                                        _guidedTargetB = tap;
-                                        _loupeLabel = 'DESTINO (B)';
-                                        _loupeAccentColor = const Color(0xFF38BDF8);
-                                      });
-                                    }
-                                  }
-                                : null,
-                            onPanUpdate: _overlayMode == OverlayDisplayMode.medidas
-                                ? (details) {
-                                    final pos = details.localPosition;
-                                    if (_isDraggingHandleA && _selectedMeasurementId != null) {
-                                      final idx = _linearMeasurements.indexWhere((m) => m.id == _selectedMeasurementId);
-                                      if (idx != -1) {
+                                      if (_isGuidingOriginA) {
+                                        // Fijar el Punto A (Origen)
+                                        final fixedA = _loupeFocalPoint;
                                         setState(() {
-                                          _linearMeasurements[idx] = _linearMeasurements[idx].copyWith(startOffset: pos);
-                                          _loupeFocalPoint = pos;
+                                          _isGuidingOriginA = false;
+                                          _showLoupe = false;
+                                          _loupeFocalPoint = null;
+                                          _guidedOriginA = fixedA;
                                         });
+                                        HapticFeedback.mediumImpact();
+                                        return;
                                       }
-                                    } else if (_isDraggingHandleB && _selectedMeasurementId != null) {
-                                      final idx = _linearMeasurements.indexWhere((m) => m.id == _selectedMeasurementId);
-                                      if (idx != -1) {
+
+                                      if (_isGuidingDestinationB && _guidedOriginA != null) {
+                                        final start = _guidedOriginA!;
+                                        final end = _guidedTargetB ?? _loupeFocalPoint;
                                         setState(() {
-                                          _linearMeasurements[idx] = _linearMeasurements[idx].copyWith(endOffset: pos);
-                                          _loupeFocalPoint = pos;
+                                          _isGuidingDestinationB = false;
+                                          _showLoupe = false;
+                                          _loupeFocalPoint = null;
+                                          _guidedOriginA = null;
+                                          _guidedTargetB = null;
                                         });
-                                      }
-                                    } else if (_isGuidingOriginA) {
-                                      setState(() {
-                                        _loupeFocalPoint = pos;
-                                      });
-                                    } else if (_isGuidingDestinationB) {
-                                      setState(() {
-                                        _loupeFocalPoint = pos;
-                                        _guidedTargetB = pos;
-                                      });
-                                    }
-                                  }
-                                : null,
-                            onPanEnd: _overlayMode == OverlayDisplayMode.medidas
-                                ? (details) async {
-                                    if (_isDraggingHandleA || _isDraggingHandleB) {
-                                      setState(() {
-                                        _isDraggingHandleA = false;
-                                        _isDraggingHandleB = false;
-                                        _showLoupe = false;
-                                        _loupeFocalPoint = null;
-                                      });
-                                      HapticFeedback.lightImpact();
-                                      return;
-                                    }
+                                        HapticFeedback.mediumImpact();
 
-                                    if (_isGuidingOriginA) {
-                                      // Fijar el Punto A (Origen)
-                                      final fixedA = _loupeFocalPoint;
-                                      setState(() {
-                                        _isGuidingOriginA = false;
-                                        _showLoupe = false;
-                                        _loupeFocalPoint = null;
-                                        _guidedOriginA = fixedA;
-                                      });
-                                      HapticFeedback.mediumImpact();
-                                      return;
-                                    }
-
-                                    if (_isGuidingDestinationB && _guidedOriginA != null) {
-                                      final start = _guidedOriginA!;
-                                      final end = _guidedTargetB ?? _loupeFocalPoint;
-                                      setState(() {
-                                        _isGuidingDestinationB = false;
-                                        _showLoupe = false;
-                                        _loupeFocalPoint = null;
-                                        _guidedOriginA = null;
-                                        _guidedTargetB = null;
-                                      });
-                                      HapticFeedback.mediumImpact();
-
-                                      if (end != null) {
-                                        final dx = end.dx - start.dx;
-                                        final dy = end.dy - start.dy;
-                                        final distance = math.sqrt(dx * dx + dy * dy);
-                                        if (distance > 15) {
-                                          final result = await showDialog<MeasurementModalResult>(
-                                            context: context,
-                                            builder: (ctx) => MeasurementCaptureModal(
-                                              start: start,
-                                              end: end,
-                                              contextualConduits: _getContextualConduitMaterials(),
-                                              voiceService: _voiceService,
-                                            ),
-                                          );
-                                          if (result != null && result.action == MeasurementModalAction.saved && result.measurement != null) {
-                                            setState(() {
-                                              _linearMeasurements.add(result.measurement!);
-                                              _selectedMeasurementId = result.measurement!.id; // Manijas A y B listas para micro-ajuste!
-                                            });
-                                            if (mounted) {
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                const SnackBar(
-                                                  content: Text(
-                                                    '✓ Cota registrada. Arrastra las manijas A o B con la lupa si deseas reajustar los bordes.',
+                                        if (end != null) {
+                                          final dx = end.dx - start.dx;
+                                          final dy = end.dy - start.dy;
+                                          final distance = math.sqrt(dx * dx + dy * dy);
+                                          if (distance > 15) {
+                                            final result = await showDialog<MeasurementModalResult>(
+                                              context: context,
+                                              builder: (ctx) => MeasurementCaptureModal(
+                                                start: start,
+                                                end: end,
+                                                contextualConduits: _getContextualConduitMaterials(),
+                                                voiceService: _voiceService,
+                                              ),
+                                            );
+                                            if (result != null && result.action == MeasurementModalAction.saved && result.measurement != null) {
+                                              setState(() {
+                                                _linearMeasurements.add(result.measurement!);
+                                                _selectedMeasurementId = null; // Flecha limpia garantizada, sin lupas ni manijas
+                                              });
+                                              if (mounted) {
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  const SnackBar(
+                                                    content: Text(
+                                                      '✓ Cota registrada. Flecha técnica establecida.',
+                                                    ),
+                                                    backgroundColor: Color(0xFF10B981),
+                                                    duration: Duration(seconds: 2),
                                                   ),
-                                                  backgroundColor: Color(0xFF10B981),
-                                                  duration: Duration(seconds: 2),
-                                                ),
-                                              );
+                                                );
+                                              }
                                             }
                                           }
                                         }
                                       }
                                     }
-                                  }
-                                : null,
-                            child: Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                Image.memory(
-                                  _capturedImageBytes!,
-                                  fit: BoxFit.fill,
-                                ),
-
-                                // Marca de agua técnica ultra-compacta (mínima altura y fuentes pequeñas)
-                                Positioned(
-                                  top: 6,
-                                  left: 6,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 5,
-                                      vertical: 2.5,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black.withValues(
-                                        alpha: 0.75,
+                                  : null,
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  if (_overlayMode == OverlayDisplayMode.medidas) ...[
+                                    if (_showLoupe && _loupeFocalPoint != null)
+                                      LoupeMagnifierWidget(
+                                        touchPosition: _loupeFocalPoint!,
+                                        canvasSize: MediaQuery.of(context).size,
+                                        label: _loupeLabel,
+                                        accentColor: _loupeAccentColor,
                                       ),
-                                      borderRadius: BorderRadius.circular(4),
-                                      border: Border.all(
-                                        color: const Color(0xFF38BDF8)
-                                            .withValues(alpha: 0.7),
-                                        width: 0.6,
-                                      ),
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            const Icon(
-                                              Icons.verified,
-                                              color: Color(0xFF38BDF8),
-                                              size: 8,
-                                            ),
-                                            const SizedBox(width: 3),
-                                            Text(
-                                              'VISTE • ${widget.project.proyecto.toUpperCase()} • FOTO #$_sessionPhotoNumber',
-                                              style: const TextStyle(
-                                                color: Colors.white,
-                                                fontSize: 7.5,
-                                                fontWeight: FontWeight.bold,
-                                                height: 1.0,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 1),
-                                        Text(
-                                          '${widget.project.contacto} | ${widget.project.fecha}',
-                                          style: const TextStyle(
-                                            color: Colors.white70,
-                                            fontSize: 6.5,
-                                            height: 1.0,
-                                          ),
-                                        ),
-                                        if (widget.project.mapa.isNotEmpty &&
-                                            widget.project.mapa !=
-                                                '0.0, 0.0') ...[
-                                          const SizedBox(height: 0.5),
-                                          Text(
-                                            'GPS: ${widget.project.mapa}',
-                                            style: const TextStyle(
-                                              color: Color(0xFF38BDF8),
-                                              fontSize: 6.5,
-                                              fontWeight: FontWeight.w500,
-                                              height: 1.0,
-                                            ),
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                                ),
-
-                                // 1. MODO PINES (Visibles únicamente en modo Pines)
-                                if (_overlayMode == OverlayDisplayMode.pines) ...[
-                                  for (int i = 0; i < _placedStickers.length; i++)
-                                    _buildNumberedPin(_placedStickers[i], i),
-
-                                  if (_placedStickers.isNotEmpty)
+                                    // Cápsula flotante de asistencia técnica sobre la fotografía
                                     Positioned(
-                                      bottom: 5,
-                                      left: 5,
-                                      right: 5,
-                                      child: _buildInPhotoTranslucentLegend(),
+                                      bottom: 8,
+                                      left: 12,
+                                      right: 12,
+                                      child: _buildMeasurementStepGuidanceBanner(),
                                     ),
+                                  ],
                                 ],
-
-                                // 2. MODO MEDIDAS (Cotas con flechas de 2 puntas y Lupa de precisión, pines ocultos para no saturar)
-                                if (_overlayMode == OverlayDisplayMode.medidas) ...[
-                                  CustomPaint(
-                                    painter: MeasurementLinesPainter(
-                                      measurements: _linearMeasurements,
-                                      selectedMeasurementId: _selectedMeasurementId,
-                                      currentStart: _cotaDragStart,
-                                      currentEnd: _cotaDragCurrent ?? _guidedTargetB,
-                                      guidedOriginA: _guidedOriginA,
-                                      activeMaterial:
-                                          _getContextualConduitMaterials()
-                                                  .isNotEmpty
-                                              ? _getContextualConduitMaterials()
-                                                  .first
-                                              : null,
-                                    ),
-                                  ),
-                                  if (_showLoupe && _loupeFocalPoint != null)
-                                    LoupeMagnifierWidget(
-                                      touchPosition: _loupeFocalPoint!,
-                                      canvasSize: MediaQuery.of(context).size,
-                                      label: _loupeLabel,
-                                      accentColor: _loupeAccentColor,
-                                    ),
-                                  // Cápsula flotante de asistencia técnica sobre la fotografía
-                                  Positioned(
-                                    bottom: 8,
-                                    left: 12,
-                                    right: 12,
-                                    child: _buildMeasurementStepGuidanceBanner(),
-                                  ),
-                                ],
-                              ],
+                              ),
                             ),
-                          ),
+                          ],
                         ),
                       ),
                     ),

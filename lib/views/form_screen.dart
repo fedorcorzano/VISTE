@@ -193,7 +193,9 @@ class _FormScreenState extends State<FormScreen> {
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20.0),
+          physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: const EdgeInsets.fromLTRB(20.0, 20.0, 20.0, 48.0),
           child: Form(
             key: _formKey,
             child: Column(

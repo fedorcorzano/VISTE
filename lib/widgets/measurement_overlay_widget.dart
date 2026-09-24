@@ -268,32 +268,13 @@ class MeasurementLinesPainter extends CustomPainter {
     required String label,
     required Color color,
   }) {
-    // Halo translúcido exterior
-    final Paint haloPaint = Paint()
-      ..color = color.withValues(alpha: 0.35)
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(center, 16.0, haloPaint);
-
-    // Anillo exterior
-    final Paint ringPaint = Paint()
-      ..color = color
-      ..strokeWidth = 2.0
-      ..style = PaintingStyle.stroke;
-    canvas.drawCircle(center, 13.0, ringPaint);
-
-    // Centro circular sólido
-    final Paint centerBg = Paint()
-      ..color = const Color(0xFF001F2F)
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(center, 10.0, centerBg);
-
-    // Letra A / B
+    // Micro-indicador técnico de manija de ajuste (cápsula compacta, sin círculos grandes ni halos de lupa)
     final TextSpan span = TextSpan(
       text: label,
-      style: TextStyle(
-        color: color,
-        fontSize: 10.5,
-        fontWeight: FontWeight.bold,
+      style: const TextStyle(
+        color: Color(0xFF001F2F),
+        fontSize: 9.0,
+        fontWeight: FontWeight.w900,
       ),
     );
     final TextPainter tp = TextPainter(
@@ -302,7 +283,24 @@ class MeasurementLinesPainter extends CustomPainter {
       textDirection: TextDirection.ltr,
     );
     tp.layout();
-    tp.paint(canvas, Offset(center.dx - tp.width / 2, center.dy - tp.height / 2));
+
+    final Offset badgeCenter = Offset(center.dx, center.dy - 16);
+    final Rect badgeRect = Rect.fromCenter(
+      center: badgeCenter,
+      width: tp.width + 8,
+      height: tp.height + 4,
+    );
+    final RRect rrect = RRect.fromRectAndRadius(badgeRect, const Radius.circular(4));
+
+    final Paint badgeBg = Paint()..color = color;
+    final Paint badgeBorder = Paint()
+      ..color = Colors.black
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.8;
+
+    canvas.drawRRect(rrect, badgeBg);
+    canvas.drawRRect(rrect, badgeBorder);
+    tp.paint(canvas, Offset(badgeCenter.dx - tp.width / 2, badgeCenter.dy - tp.height / 2));
   }
 
   @override
@@ -328,7 +326,7 @@ class LoupeMagnifierWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const double loupeDiameter = 110.0;
+    const double loupeDiameter = 114.0;
     const double loupeRadius = loupeDiameter / 2;
 
     // Desplazar la lupa 110px por encima del dedo para despejar por completo el área visual
@@ -337,84 +335,114 @@ class LoupeMagnifierWidget extends StatelessWidget {
 
     // Control de bordes de pantalla
     loupeX = loupeX.clamp(10.0, math.max(10.0, canvasSize.width - loupeDiameter - 10.0));
-    if (loupeY < 15.0) {
+    bool invertedBelow = false;
+    if (loupeY < 32.0) {
       // Si el punto está pegado al borde superior, invertir la lupa debajo del dedo
-      loupeY = touchPosition.dy + 40.0;
+      loupeY = touchPosition.dy + 45.0;
+      invertedBelow = true;
     }
 
     final double centerX = loupeX + loupeRadius;
     final double centerY = loupeY + loupeRadius;
 
     // CÁLCULO EXACTO: Vector desde el centro geométrico de la lupa hasta el punto de contacto real
-    // Esto garantiza que el centro de la lupa y la punta del visor coincidan milimétricamente con el contacto
     final Offset focalOffset = Offset(touchPosition.dx - centerX, touchPosition.dy - centerY);
 
     return Positioned(
       left: loupeX,
       top: loupeY,
       child: IgnorePointer(
-        child: Container(
+        child: SizedBox(
           width: loupeDiameter,
           height: loupeDiameter,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.transparent,
-            border: Border.all(color: accentColor, width: 2.8),
-            boxShadow: [
-              BoxShadow(
-                color: accentColor.withValues(alpha: 0.40),
-                blurRadius: 14,
-                spreadRadius: 2,
-              ),
-              const BoxShadow(
-                color: Colors.black87,
-                blurRadius: 10,
-                spreadRadius: 2,
-                offset: Offset(0, 4),
-              ),
-            ],
-          ),
-          child: ClipOval(
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                RawMagnifier(
-                  decoration: const MagnifierDecoration(
-                    shape: CircleBorder(),
-                  ),
-                  size: const Size(loupeDiameter, loupeDiameter),
-                  magnificationScale: 2.5,
-                  focalPointOffset: focalOffset,
+          child: Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.center,
+            children: [
+              // 1. Lente amplificador circular 100% nítido (SIN recortes dobles ni sombras internas)
+              Container(
+                width: loupeDiameter,
+                height: loupeDiameter,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: accentColor, width: 2.2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: accentColor.withValues(alpha: 0.35),
+                      blurRadius: 10,
+                      spreadRadius: 1,
+                    ),
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.4),
+                      blurRadius: 8,
+                      spreadRadius: 1,
+                    ),
+                  ],
                 ),
-                // Retícula táctica y puntero de máxima precisión en el centro
-                CustomPaint(
-                  size: const Size(loupeDiameter, loupeDiameter),
-                  painter: CrosshairReticlePainter(color: accentColor),
-                ),
-                // Etiqueta superior con el paso activo (ORIGEN A / DESTINO B)
-                if (label != null)
-                  Positioned(
-                    top: 6,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.85),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: accentColor.withValues(alpha: 0.9), width: 1.0),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    RawMagnifier(
+                      decoration: const MagnifierDecoration(
+                        shape: CircleBorder(),
                       ),
-                      child: Text(
-                        label!,
-                        style: TextStyle(
-                          color: accentColor,
-                          fontSize: 8.5,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.6,
+                      size: const Size(loupeDiameter, loupeDiameter),
+                      magnificationScale: 2.4,
+                      focalPointOffset: focalOffset,
+                    ),
+                    // Retícula táctica de ultra-precisión (SIN línea ecuatorial ni oscurecimiento)
+                    CustomPaint(
+                      size: const Size(loupeDiameter, loupeDiameter),
+                      painter: CrosshairReticlePainter(color: accentColor),
+                    ),
+                  ],
+                ),
+              ),
+
+              // 2. Etiqueta flotante con el paso activo colocada COMPLETAMENTE FUERA del lente
+              if (label != null)
+                Positioned(
+                  top: invertedBelow ? loupeDiameter + 6 : -22,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF001F2F),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: accentColor, width: 1.2),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.6),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
                         ),
-                      ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: accentColor,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          label!,
+                          style: TextStyle(
+                            color: accentColor,
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-              ],
-            ),
+                ),
+            ],
           ),
         ),
       ),
@@ -422,7 +450,8 @@ class LoupeMagnifierWidget extends StatelessWidget {
   }
 }
 
-/// Dibuja la retícula técnica militar con puntero central ("la punta") lista para alinear al milímetro
+/// Dibuja la retícula técnica militar con puntero central ("la punta") lista para alinear al milímetro.
+/// 100% Despejada: SIN línea ecuatorial divisoria ni zonas sombreadas en la parte superior.
 class CrosshairReticlePainter extends CustomPainter {
   final Color color;
 
@@ -433,88 +462,51 @@ class CrosshairReticlePainter extends CustomPainter {
     final double cx = size.width / 2;
     final double cy = size.height / 2;
 
-    // 1. Círculo exterior táctico con líneas guía
+    // 1. Círculo exterior táctico sutil y limpio
     final Paint circlePaint = Paint()
-      ..color = color.withValues(alpha: 0.65)
+      ..color = color.withValues(alpha: 0.45)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0;
-    canvas.drawCircle(Offset(cx, cy), 24.0, circlePaint);
+    canvas.drawCircle(Offset(cx, cy), 36.0, circlePaint);
 
-    final Paint circleShadow = Paint()
-      ..color = Colors.black.withValues(alpha: 0.7)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.2;
-    canvas.drawCircle(Offset(cx, cy), 24.0, circleShadow);
-
-    // 2. Líneas de cruz de precisión (con apertura central de 12px)
-    final Paint lineShadow = Paint()
-      ..color = Colors.black.withValues(alpha: 0.85)
-      ..strokeWidth = 2.4;
-    final Paint linePaint = Paint()
+    // 2. Guías exteriores de alineación en los 4 extremos (N, S, E, O)
+    // Dejando un radio central de 18px COMPLETAMENTE ABIERTO Y DESPEJADO
+    // para que el punto y borde a señalar sean 100% visibles sin ninguna línea horizontal divisoria.
+    final Paint guideLinePaint = Paint()
       ..color = color
-      ..strokeWidth = 1.3;
+      ..strokeWidth = 1.2
+      ..style = PaintingStyle.stroke;
+    final Paint guideShadowPaint = Paint()
+      ..color = Colors.black.withValues(alpha: 0.6)
+      ..strokeWidth = 2.2
+      ..style = PaintingStyle.stroke;
 
-    const double innerGap = 6.0;
-    const double outerLen = 34.0;
+    const double innerClearRadius = 18.0;
+    const double outerGuideRadius = 38.0;
 
-    // Horizontales
-    canvas.drawLine(Offset(cx - outerLen, cy), Offset(cx - innerGap, cy), lineShadow);
-    canvas.drawLine(Offset(cx + innerGap, cy), Offset(cx + outerLen, cy), lineShadow);
-    canvas.drawLine(Offset(cx - outerLen, cy), Offset(cx - innerGap, cy), linePaint);
-    canvas.drawLine(Offset(cx + innerGap, cy), Offset(cx + outerLen, cy), linePaint);
+    // Horizontales (Oeste y Este): Ticks guía exteriores únicamente en los extremos
+    // (¡NUNCA una línea continua que cruce el ecuador cy!)
+    canvas.drawLine(Offset(cx - outerGuideRadius, cy), Offset(cx - innerClearRadius, cy), guideShadowPaint);
+    canvas.drawLine(Offset(cx - outerGuideRadius, cy), Offset(cx - innerClearRadius, cy), guideLinePaint);
+    canvas.drawLine(Offset(cx + innerClearRadius, cy), Offset(cx + outerGuideRadius, cy), guideShadowPaint);
+    canvas.drawLine(Offset(cx + innerClearRadius, cy), Offset(cx + outerGuideRadius, cy), guideLinePaint);
 
-    // Verticales
-    canvas.drawLine(Offset(cx, cy - outerLen), Offset(cx, cy - innerGap), lineShadow);
-    canvas.drawLine(Offset(cx, cy + innerGap), Offset(cx, cy + outerLen), lineShadow);
-    canvas.drawLine(Offset(cx, cy - outerLen), Offset(cx, cy - innerGap), linePaint);
-    canvas.drawLine(Offset(cx, cy + innerGap), Offset(cx, cy + outerLen), linePaint);
+    // Verticales (Norte y Sur): Ticks guía exteriores
+    canvas.drawLine(Offset(cx, cy - outerGuideRadius), Offset(cx, cy - innerClearRadius), guideShadowPaint);
+    canvas.drawLine(Offset(cx, cy - outerGuideRadius), Offset(cx, cy - innerClearRadius), guideLinePaint);
+    canvas.drawLine(Offset(cx, cy + innerClearRadius), Offset(cx, cy + outerGuideRadius), guideShadowPaint);
+    canvas.drawLine(Offset(cx, cy + innerClearRadius), Offset(cx, cy + outerGuideRadius), guideLinePaint);
 
-    // 3. "La Punta": Cuatro flechas guía convergentes hacia el centro focal exacto
-    final Paint arrowPaint = Paint()
+    // 3. Punteros micro-guía hacia el centro focal (longitud 3.5px, radio 4.5px a 8px)
+    final Paint microTickPaint = Paint()
       ..color = color
-      ..style = PaintingStyle.fill;
-    final Paint arrowBorder = Paint()
-      ..color = Colors.black
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.8;
+      ..strokeWidth = 1.0;
+    canvas.drawLine(Offset(cx, cy - 8.0), Offset(cx, cy - 4.5), microTickPaint);
+    canvas.drawLine(Offset(cx, cy + 4.5), Offset(cx, cy + 8.0), microTickPaint);
+    canvas.drawLine(Offset(cx - 8.0, cy), Offset(cx - 4.5, cy), microTickPaint);
+    canvas.drawLine(Offset(cx + 4.5, cy), Offset(cx + 8.0, cy), microTickPaint);
 
-    // Punta Norte (apunta hacia abajo al centro)
-    final Path northArrow = Path()
-      ..moveTo(cx, cy - 2.0)
-      ..lineTo(cx - 3.5, cy - 7.0)
-      ..lineTo(cx + 3.5, cy - 7.0)
-      ..close();
-    canvas.drawPath(northArrow, arrowPaint);
-    canvas.drawPath(northArrow, arrowBorder);
-
-    // Punta Sur (apunta hacia arriba al centro)
-    final Path southArrow = Path()
-      ..moveTo(cx, cy + 2.0)
-      ..lineTo(cx - 3.5, cy + 7.0)
-      ..lineTo(cx + 3.5, cy + 7.0)
-      ..close();
-    canvas.drawPath(southArrow, arrowPaint);
-    canvas.drawPath(southArrow, arrowBorder);
-
-    // Punta Oeste (apunta hacia la derecha al centro)
-    final Path westArrow = Path()
-      ..moveTo(cx - 2.0, cy)
-      ..lineTo(cx - 7.0, cy - 3.5)
-      ..lineTo(cx - 7.0, cy + 3.5)
-      ..close();
-    canvas.drawPath(westArrow, arrowPaint);
-    canvas.drawPath(westArrow, arrowBorder);
-
-    // Punta Este (apunta hacia la izquierda al centro)
-    final Path eastArrow = Path()
-      ..moveTo(cx + 2.0, cy)
-      ..lineTo(cx + 7.0, cy - 3.5)
-      ..lineTo(cx + 7.0, cy + 3.5)
-      ..close();
-    canvas.drawPath(eastArrow, arrowPaint);
-    canvas.drawPath(eastArrow, arrowBorder);
-
-    // 4. Punto central focal de alta visibilidad (Punto blanco con contorno negro)
+    // 4. Punto central focal de alta visibilidad (Punto blanco puro con contorno negro)
     final Paint centerDot = Paint()
       ..color = Colors.white
       ..style = PaintingStyle.fill;
@@ -655,177 +647,187 @@ class _MeasurementCaptureModalState extends State<MeasurementCaptureModal> {
     final bool isEditing = widget.existingMeasurement != null;
 
     return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
       backgroundColor: const Color(0xFF1E293B),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: Padding(
-        padding: const EdgeInsets.all(20.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE3A51A),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(
-                    isEditing ? Icons.edit : Icons.straighten,
-                    color: const Color(0xFF001F2F),
-                    size: 22,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    isEditing ? 'Editar Cota de Medida' : 'Registrar Cota de Medida',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.85,
+        ),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE3A51A),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      isEditing ? Icons.edit : Icons.straighten,
+                      color: const Color(0xFF001F2F),
+                      size: 22,
                     ),
                   ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white54, size: 20),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      isEditing ? 'Editar Cota de Medida' : 'Registrar Cota de Medida',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white54, size: 20),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
 
-            // Campo de metros con botón de micrófono
-            const Text(
-              'Longitud del tramo (Metros):',
-              style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
-            ),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _distanceController,
-                    autofocus: true,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    style: const TextStyle(
+              // Campo de metros con botón de micrófono
+              const Text(
+                'Longitud del tramo (Metros):',
+                style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _distanceController,
+                      autofocus: true,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      decoration: InputDecoration(
+                        hintText: 'Ej. 12.50',
+                        hintStyle: const TextStyle(color: Colors.white30, fontSize: 14),
+                        suffixText: 'metros',
+                        suffixStyle: const TextStyle(color: Color(0xFFE3A51A), fontWeight: FontWeight.bold),
+                        filled: true,
+                        fillColor: const Color(0xFF0F172A),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: Color(0xFF334155)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: Color(0xFFE3A51A), width: 1.5),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    style: IconButton.styleFrom(
+                      backgroundColor: _isListening ? Colors.redAccent : const Color(0xFF334155),
+                      padding: const EdgeInsets.all(12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    icon: Icon(
+                      _isListening ? Icons.mic : Icons.mic_none,
                       color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
                     ),
-                    decoration: InputDecoration(
-                      hintText: 'Ej. 12.50',
-                      hintStyle: const TextStyle(color: Colors.white30, fontSize: 14),
-                      suffixText: 'metros',
-                      suffixStyle: const TextStyle(color: Color(0xFFE3A51A), fontWeight: FontWeight.bold),
-                      filled: true,
-                      fillColor: const Color(0xFF0F172A),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: const BorderSide(color: Color(0xFF334155)),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: const BorderSide(color: Color(0xFFE3A51A), width: 1.5),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                    ),
+                    tooltip: 'Dictar medida por voz',
+                    onPressed: _listenVoiceDistance,
                   ),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  style: IconButton.styleFrom(
-                    backgroundColor: _isListening ? Colors.redAccent : const Color(0xFF334155),
-                    padding: const EdgeInsets.all(12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                  icon: Icon(
-                    _isListening ? Icons.mic : Icons.mic_none,
-                    color: Colors.white,
-                  ),
-                  tooltip: 'Dictar medida por voz',
-                  onPressed: _listenVoiceDistance,
+                ],
+              ),
+              if (_isListening || _recognizedVoice.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  '🎙️ "$_recognizedVoice"',
+                  style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 11, fontStyle: FontStyle.italic),
                 ),
               ],
-            ),
-            if (_isListening || _recognizedVoice.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(
-                '🎙️ "$_recognizedVoice"',
-                style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 11, fontStyle: FontStyle.italic),
+              const SizedBox(height: 16),
+
+              // Selector contextual de Canalización / Tubería
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  const Text(
+                    'Canalización / Material:',
+                    style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+                  ),
+                  if (widget.contextualConduits.isNotEmpty)
+                    const Text(
+                      '📍 Sugerido de pines',
+                      style: TextStyle(color: Color(0xFF4ADE80), fontSize: 11, fontWeight: FontWeight.w600),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+
+              // Chips de canalización
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: _buildMaterialChips(),
+              ),
+
+              const SizedBox(height: 20),
+
+              // Botones de acción (Eliminar si está editando, Cancelar, Guardar)
+              Wrap(
+                alignment: WrapAlignment.end,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  if (isEditing)
+                    TextButton.icon(
+                      onPressed: () {
+                        Navigator.pop(
+                          context,
+                          const MeasurementModalResult(action: MeasurementModalAction.deleted),
+                        );
+                      },
+                      icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 18),
+                      label: const Text(
+                        'Eliminar',
+                        style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                    ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancelar', style: TextStyle(color: Colors.white54)),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: _submitMeasurement,
+                    icon: const Icon(Icons.check, size: 18),
+                    label: Text(isEditing ? 'Guardar Cambios' : 'Guardar Cota'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFE3A51A),
+                      foregroundColor: const Color(0xFF001F2F),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      textStyle: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
               ),
             ],
-            const SizedBox(height: 16),
-
-            // Selector contextual de Canalización / Tubería
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Canalización / Material:',
-                  style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
-                ),
-                if (widget.contextualConduits.isNotEmpty)
-                  const Text(
-                    '📍 Sugerido de pines',
-                    style: TextStyle(color: Color(0xFF4ADE80), fontSize: 11, fontWeight: FontWeight.w600),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 8),
-
-            // Chips de canalización
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: _buildMaterialChips(),
-            ),
-
-            const SizedBox(height: 20),
-
-            // Botones de acción (Eliminar si está editando, Cancelar, Guardar)
-            Row(
-              children: [
-                if (isEditing)
-                  TextButton.icon(
-                    onPressed: () {
-                      Navigator.pop(
-                        context,
-                        const MeasurementModalResult(action: MeasurementModalAction.deleted),
-                      );
-                    },
-                    icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 18),
-                    label: const Text(
-                      'Eliminar',
-                      style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 13),
-                    ),
-                  ),
-                const Spacer(),
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancelar', style: TextStyle(color: Colors.white54)),
-                ),
-                const SizedBox(width: 8),
-                ElevatedButton.icon(
-                  onPressed: _submitMeasurement,
-                  icon: const Icon(Icons.check, size: 18),
-                  label: Text(isEditing ? 'Guardar Cambios' : 'Guardar Cota'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFE3A51A),
-                    foregroundColor: const Color(0xFF001F2F),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    textStyle: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ],
-            ),
-          ],
+          ),
         ),
       ),
     );
   }
+
 
   List<Widget> _buildMaterialChips() {
     final Set<String> allOptions = {};
