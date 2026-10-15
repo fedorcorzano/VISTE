@@ -10,6 +10,8 @@ class InternalReportPdfService {
   static Future<Uint8List> generatePdf(ProjectSessionModel session) async {
     final pdf = pw.Document();
 
+    final logoBytes = await PdfBrandHelper.loadLogoBytes();
+
     final materials = session.getMaterialsWithFrequency();
     final tools = session.getToolsWithFrequency();
     final accessories = session.getConsolidatedAccessories();
@@ -34,6 +36,7 @@ class InternalReportPdfService {
             badgeText: 'USO INTERNO',
             badgeColor: const PdfColor.fromInt(0xFFEF4444),
             accentBorderColor: accentColor,
+            logoBytes: logoBytes,
           );
         },
         footer: (pw.Context context) {

@@ -9,6 +9,8 @@ class ProjectManagerReportPdfService {
   static Future<Uint8List> generatePdf(ProjectSessionModel session) async {
     final pdf = pw.Document();
 
+    final logoBytes = await PdfBrandHelper.loadLogoBytes();
+
     const primaryColor = PdfColor.fromInt(0xFF0F172A); // Slate 900
     const accentColor = PdfColor.fromInt(0xFF0284C7); // Sky 600
     const warningColor = PdfColor.fromInt(0xFFB45309); // Amber 700
@@ -29,6 +31,7 @@ class ProjectManagerReportPdfService {
             subtitle: 'Informe Tecnico Integral de Obra, Canalizaciones y Validacion de Campo',
             badgeText: 'GESTOR PROYECTO',
             badgeColor: const PdfColor.fromInt(0xFF0284C7),
+            logoBytes: logoBytes,
           );
         },
         footer: (pw.Context context) {
@@ -399,7 +402,7 @@ class ProjectManagerReportPdfService {
                     pw.Row(
                       mainAxisSize: pw.MainAxisSize.min,
                       children: [
-                        PdfBrandHelper.buildLogo(size: 20, showSubtitle: false),
+                        PdfBrandHelper.buildLogo(logoBytes: logoBytes, size: 20, showSubtitle: false),
                         pw.SizedBox(width: 8),
                         pw.Text(
                           'EVIDENCIA #${photo.photoNumber} (PINES CON LEYENDA) - ${photo.areaSector.toUpperCase()}',
@@ -496,7 +499,7 @@ class ProjectManagerReportPdfService {
                       pw.Row(
                         mainAxisSize: pw.MainAxisSize.min,
                         children: [
-                          PdfBrandHelper.buildLogo(size: 20, showSubtitle: false),
+                          PdfBrandHelper.buildLogo(logoBytes: logoBytes, size: 20, showSubtitle: false),
                           pw.SizedBox(width: 8),
                           pw.Text(
                             'EVIDENCIA #${photo.photoNumber} (COTAS SIN PINES) - ${photo.areaSector.toUpperCase()}',

@@ -10,6 +10,8 @@ class IpercReportPdfService {
   static Future<Uint8List> generatePdf(ProjectSessionModel session) async {
     final pdf = pw.Document();
 
+    final logoBytes = await PdfBrandHelper.loadLogoBytes();
+
     const navyColor = PdfColor.fromInt(0xFF001F2F);
     const yellowColor = PdfColor.fromInt(0xFFE3A51A);
     const grayBorder = PdfColor.fromInt(0xFFCBD5E1);
@@ -29,6 +31,7 @@ class IpercReportPdfService {
             badgeText: 'DOCUMENTO SST OBLIGATORIO',
             badgeColor: yellowColor,
             accentBorderColor: navyColor,
+            logoBytes: logoBytes,
           );
         },
         build: (context) {

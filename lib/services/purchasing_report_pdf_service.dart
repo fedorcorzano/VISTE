@@ -25,6 +25,8 @@ class PurchasingReportPdfService {
   static Future<Uint8List> generatePdf(ProjectSessionModel session) async {
     final pdf = pw.Document();
 
+    final logoBytes = await PdfBrandHelper.loadLogoBytes();
+
     final materials = session.getValidatedMaterialsWithFrequency();
     final accessories = session.getValidatedConsolidatedAccessories();
     final linearMetersMap = session.getConsolidatedLinearMeters();
@@ -71,6 +73,7 @@ class PurchasingReportPdfService {
             badgeText: 'COMPRAS Y LOGÍSTICA',
             badgeColor: const PdfColor.fromInt(0xFF0284C7),
             accentBorderColor: accentColor,
+            logoBytes: logoBytes,
           );
         },
         footer: (pw.Context context) {

@@ -23,7 +23,8 @@ class ClientReportPdfService {
     const lightBg = PdfColor.fromInt(0xFFF8FAFC);
     const borderGray = PdfColor.fromInt(0xFFE2E8F0);
 
-    // 0. Obtener mapa 2D para la carátula
+    // 0. Cargar logo corporativo oficial y mapa 2D para la carátula
+    final logoBytes = await PdfBrandHelper.loadLogoBytes();
     final coords = _parseCoordinates(session.project.mapa);
     Uint8List? satelliteMapBytes = preloadedSatelliteMap;
     if (satelliteMapBytes == null && coords != null) {
@@ -55,7 +56,7 @@ class ClientReportPdfService {
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: pw.CrossAxisAlignment.center,
                   children: [
-                    _buildVigilarteLogo(),
+                    PdfBrandHelper.buildCoverLogo(logoBytes: logoBytes, height: 42),
                     pw.Container(
                       padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                       decoration: pw.BoxDecoration(
@@ -217,6 +218,7 @@ class ClientReportPdfService {
             subtitle: 'Informe de Condiciones de Seguridad en Campo y Propuesta de Equipamiento',
             badgeText: 'REPORTE CLIENTE',
             badgeColor: const PdfColor.fromInt(0xFF10B981),
+            logoBytes: logoBytes,
           );
         },
         footer: (pw.Context context) {
@@ -510,7 +512,7 @@ class ClientReportPdfService {
                     pw.Row(
                       mainAxisSize: pw.MainAxisSize.min,
                       children: [
-                        PdfBrandHelper.buildLogo(size: 20, showSubtitle: false),
+                        PdfBrandHelper.buildLogo(logoBytes: logoBytes, height: 22, showSubtitle: false),
                         pw.SizedBox(width: 8),
                         pw.Text(
                           '3. JERARQUÍA DE CONTROL DE RIESGOS Y EVIDENCIA #${photo.photoNumber}',
@@ -841,71 +843,6 @@ class ClientReportPdfService {
     return null;
   }
 
-  /// Genera el Logo corporativo de VIGILARTE en alta fidelidad vectorial
-  static pw.Widget _buildVigilarteLogo() {
-    return pw.Row(
-      mainAxisSize: pw.MainAxisSize.min,
-      children: [
-        // Emblema con lente de seguridad
-        pw.Container(
-          width: 38,
-          height: 38,
-          decoration: pw.BoxDecoration(
-            color: const PdfColor.fromInt(0xFF0F172A), // Slate 900
-            borderRadius: pw.BorderRadius.circular(8),
-            border: pw.Border.all(color: const PdfColor.fromInt(0xFF0284C7), width: 1.5),
-          ),
-          child: pw.Center(
-            child: pw.Stack(
-              alignment: pw.Alignment.center,
-              children: [
-                pw.Container(
-                  width: 22,
-                  height: 22,
-                  decoration: pw.BoxDecoration(
-                    shape: pw.BoxShape.circle,
-                    border: pw.Border.all(color: const PdfColor.fromInt(0xFF38BDF8), width: 1.5),
-                  ),
-                ),
-                pw.Container(
-                  width: 10,
-                  height: 10,
-                  decoration: const pw.BoxDecoration(
-                    color: PdfColor.fromInt(0xFF10B981), // Emerald 500
-                    shape: pw.BoxShape.circle,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        pw.SizedBox(width: 10),
-        pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          mainAxisSize: pw.MainAxisSize.min,
-          children: [
-            pw.Text(
-              'V I G I L A R T E',
-              style: pw.TextStyle(
-                color: const PdfColor.fromInt(0xFF0F172A),
-                fontSize: 16,
-                fontWeight: pw.FontWeight.bold,
-              ),
-            ),
-            pw.SizedBox(height: 1),
-            pw.Text(
-              'SEGURIDAD ELECTRONICA & INFRAESTRUCTURA',
-              style: const pw.TextStyle(
-                color: PdfColor.fromInt(0xFF0284C7),
-                fontSize: 6.5,
-                fontWeight: pw.FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
 
   /// Fila de metadata para la carátula
   static pw.Widget _buildCoverMetaRow(

@@ -25,6 +25,8 @@ class WarehouseReportPdfService {
   static Future<Uint8List> generatePdf(ProjectSessionModel session) async {
     final pdf = pw.Document();
 
+    final logoBytes = await PdfBrandHelper.loadLogoBytes();
+
     final tools = session.getValidatedToolsWithFrequency();
 
     // Precarga paralela de imágenes reales de herramientas
@@ -64,6 +66,7 @@ class WarehouseReportPdfService {
             badgeText: 'USO ALMACÉN',
             badgeColor: const PdfColor.fromInt(0xFFF59E0B),
             accentBorderColor: accentColor,
+            logoBytes: logoBytes,
           );
         },
         footer: (pw.Context context) {
