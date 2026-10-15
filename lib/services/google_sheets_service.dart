@@ -9,34 +9,61 @@ import '../models/project_model.dart';
 import '../models/sticker_model.dart';
 import 'catalog_visual_service.dart';
 
+import '../models/session_evidence_model.dart';
+
+class SessionSyncResult {
+  final bool isSuccess;
+  final int syncedPhotos;
+  final int totalPhotos;
+  final List<String> photoUrls;
+  final String message;
+
+  const SessionSyncResult({
+    required this.isSuccess,
+    required this.syncedPhotos,
+    required this.totalPhotos,
+    this.photoUrls = const [],
+    required this.message,
+  });
+}
+
 class GoogleSheetsService {
   String get _webAppUrl => Constants.googleScriptUrl;
 
-  // 1. Enviar / Sincronizar el reporte a Google Sheets y Drive
+  // 1. Enviar / Sincronizar un registro individual a Google Sheets y Drive
   Future<SheetsResponse> syncProject(ProjectModel project) async {
     try {
-      final response = await http.post(
+      http.Response response = await http.post(
         Uri.parse(_webAppUrl),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode(project.toJson()),
       );
 
-      debugPrint('Código HTTP recibido: ${response.statusCode}');
-      debugPrint('Respuesta Apps Script: ${response.body}');
+      debugPrint('Código HTTP POST recibido: ${response.statusCode}');
+
+      // Si Google Apps Script redirige (302), seguimos la redirección para obtener el JSON real
+      if (response.statusCode == 302 && response.headers.containsKey('location')) {
+        final redirectUrl = response.headers['location']!;
+        debugPrint('Siguiendo redirección de Apps Script a: $redirectUrl');
+        response = await http.get(Uri.parse(redirectUrl));
+        debugPrint('Respuesta final Apps Script tras redirección: ${response.statusCode} - ${response.body}');
+      }
 
       if (response.statusCode == 200 || response.statusCode == 302) {
         String msg = '¡Reporte y foto registrados con éxito en Excel y Drive!';
         try {
-          final data = jsonDecode(response.body);
-          if (data is Map && data['status'] == 'error') {
-            return SheetsResponse(
-              isSuccess: false,
-              message: data['message'] ?? 'Error reportado por el servidor',
-            );
-          }
-          if (data is Map && data['data'] != null && data['data']['fotoUrl'] != null) {
-            final url = data['data']['fotoUrl'];
-            msg = '¡Éxito! Evidencia guardada en Drive y registrada en Excel.\nURL: $url';
+          if (response.body.isNotEmpty) {
+            final data = jsonDecode(response.body);
+            if (data is Map && data['status'] == 'error') {
+              return SheetsResponse(
+                isSuccess: false,
+                message: data['message'] ?? 'Error reportado por el servidor',
+              );
+            }
+            if (data is Map && data['data'] != null && data['data']['fotoUrl'] != null) {
+              final url = data['data']['fotoUrl'];
+              msg = '¡Éxito! Evidencia guardada en Drive y registrada en Excel.\nURL: $url';
+            }
           }
         } catch (_) {}
 
@@ -53,6 +80,79 @@ class GoogleSheetsService {
     } catch (e) {
       return SheetsResponse(isSuccess: false, message: 'Excepción de red: $e');
     }
+  }
+
+  // 1.1 Sincronizar todas las fotografías (con cotas y pines) y datos de la sesión a Google Drive y Sheets
+  Future<SessionSyncResult> syncSession(
+    ProjectSessionModel session, {
+    void Function(int current, int total, String area)? onProgress,
+  }) async {
+    final photos = session.photos;
+    if (photos.isEmpty) {
+      // Subir registro general sin fotos si no hay imágenes
+      final singleRes = await syncProject(session.project.copyWith(
+        numFoto: 1,
+        areaSector: 'Levantamiento General',
+      ));
+      return SessionSyncResult(
+        isSuccess: singleRes.isSuccess,
+        syncedPhotos: singleRes.isSuccess ? 1 : 0,
+        totalPhotos: 0,
+        message: singleRes.message,
+      );
+    }
+
+    int successCount = 0;
+    final List<String> urls = [];
+    String lastError = '';
+
+    for (int i = 0; i < photos.length; i++) {
+      final photo = photos[i];
+      final areaName = photo.areaSector.trim().isEmpty
+          ? 'Ambiente #${photo.photoNumber}'
+          : photo.areaSector.trim();
+
+      onProgress?.call(i + 1, photos.length, areaName);
+
+      // Usar imagen compuesta final (con cotas métricas y pines grabados)
+      final Uint8List imageBytes = photo.pngBytes;
+      final String base64Image =
+          imageBytes.isNotEmpty ? base64Encode(imageBytes) : '';
+
+      final projectPayload = session.project.copyWith(
+        numFoto: photo.photoNumber,
+        areaSector: areaName,
+        peligros: photo.peligros,
+        estructuras: photo.estructuras,
+        materiales: photo.materiales,
+        herramientas: photo.herramientas,
+        accesorios: photo.accesorios,
+        fotoBase64: base64Image,
+        localImagePath: photo.localImagePath,
+      );
+
+      final res = await syncProject(projectPayload);
+      if (res.isSuccess) {
+        successCount++;
+        final match = RegExp(r'https://drive\.google\.com[^\s]+').firstMatch(res.message);
+        if (match != null) {
+          urls.add(match.group(0)!);
+        }
+      } else {
+        lastError = res.message;
+      }
+    }
+
+    final allOk = successCount == photos.length;
+    return SessionSyncResult(
+      isSuccess: allOk,
+      syncedPhotos: successCount,
+      totalPhotos: photos.length,
+      photoUrls: urls,
+      message: allOk
+          ? '✓ ¡Las $successCount evidencias fotográficas fueron guardadas en Google Drive ("Vigilarte_Evidencias") y registradas en Google Sheets ("Proyectos_Terreno")!'
+          : 'Se sincronizaron $successCount de ${photos.length} fotos. Último detalle: $lastError',
+    );
   }
 
   // 2. Obtener catálogos (Proyectos, Estructuras, Materiales, Peligros, Herramientas, Accesorios)

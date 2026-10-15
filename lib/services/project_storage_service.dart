@@ -12,8 +12,13 @@ class ProjectStorageService {
 
   /// Obtiene el directorio donde se almacenan las sesiones
   static Future<Directory> _getProjectsDirectory() async {
-    final appDir = await getApplicationDocumentsDirectory();
-    final dir = Directory('${appDir.path}/$_folderName');
+    Directory dir;
+    try {
+      final appDir = await getApplicationDocumentsDirectory().timeout(const Duration(milliseconds: 500));
+      dir = Directory('${appDir.path}/$_folderName');
+    } catch (_) {
+      dir = Directory('.$_folderName');
+    }
     if (!await dir.exists()) {
       await dir.create(recursive: true);
     }

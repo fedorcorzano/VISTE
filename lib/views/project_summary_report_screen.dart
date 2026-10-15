@@ -9,8 +9,11 @@ import '../services/client_report_pdf_service.dart';
 import '../services/iperc_report_pdf_service.dart';
 import '../services/catalog_visual_service.dart';
 import '../services/google_sheets_service.dart';
-import '../widgets/frequency_charts_widget.dart';
+import '../services/project_storage_service.dart';
+import '../widgets/manager_validation_sheet.dart';
 import 'catalog_manager_screen.dart';
+import 'field_photo_capture_screen.dart';
+import 'supplier_quotation_screen.dart';
 
 class ProjectSummaryReportScreen extends StatefulWidget {
   final ProjectSessionModel session;
@@ -32,7 +35,7 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
   Uint8List? _purchasingPdfBytes;
   Uint8List? _managerPdfBytes;
   Uint8List? _clientPdfBytes;
-  int _selectedAnalyticsCategory = 0; // 0: Herramientas, 1: Materiales, 2: Accesorios
+  int _hierarchySelectedPhotoIndex = 0;
 
   @override
   void initState() {
@@ -189,17 +192,13 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
   }
 
   void _openManagerValidationSheet() {
-    showModalBottomSheet(
+    showManagerValidationSheet(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => _ManagerValidationSheet(
-        session: widget.session,
-        onSaved: () {
-          _generatePdfsInBackground();
-          setState(() {});
-        },
-      ),
+      session: widget.session,
+      onSaved: () {
+        _generatePdfsInBackground();
+        setState(() {});
+      },
     );
   }
 
@@ -257,6 +256,223 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
     );
   }
 
+  bool _isCloudSynced = false;
+  void Function(void Function())? _syncStateSetter;
+
+  /// Sincroniza todas las fotos y metadatos del proyecto con Google Sheets y Google Drive
+  Future<void> _syncSessionToCloud() async {
+    int currentStep = 0;
+    final int totalSteps = widget.session.photos.isNotEmpty ? widget.session.photos.length : 1;
+    String currentArea = 'Iniciando conexión con Google Apps Script...';
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            _syncStateSetter = setDialogState;
+            return AlertDialog(
+              backgroundColor: const Color(0xFF1E293B),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: const Row(
+                children: [
+                  Icon(Icons.cloud_upload_outlined, color: Color(0xFF38BDF8), size: 24),
+                  SizedBox(width: 8),
+                  Text(
+                    'Sincronizando con Google Cloud',
+                    style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Subiendo fotografías con cotas y pines a Google Drive y registrando datos en Google Sheets...',
+                    style: TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                  const SizedBox(height: 16),
+                  LinearProgressIndicator(
+                    value: totalSteps > 0 ? (currentStep / totalSteps).clamp(0.0, 1.0) : null,
+                    backgroundColor: const Color(0xFF334155),
+                    valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF38BDF8)),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Evidencia $currentStep de $totalSteps',
+                    style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    currentArea,
+                    style: const TextStyle(color: Colors.white60, fontSize: 11),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    try {
+      final sheetsService = GoogleSheetsService();
+      final result = await sheetsService.syncSession(
+        widget.session,
+        onProgress: (current, total, area) {
+          currentStep = current;
+          currentArea = 'Subiendo a Drive y registrando: $area';
+          _syncStateSetter?.call(() {});
+        },
+      );
+
+      if (mounted) {
+        Navigator.pop(context); // Cerrar diálogo de progreso
+      }
+
+      if (result.isSuccess) {
+        setState(() {
+          _isCloudSynced = true;
+        });
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              backgroundColor: const Color(0xFF1E293B),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: const Row(
+                children: [
+                  Icon(Icons.cloud_done, color: Color(0xFF10B981), size: 26),
+                  SizedBox(width: 8),
+                  Text('¡Sincronización Exitosa!', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(result.message, style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0F172A),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.folder_shared_outlined, color: Color(0xFF10B981), size: 16),
+                            SizedBox(width: 6),
+                            Text('Carpeta Google Drive:', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        const Text('• Vigilarte_Evidencias', style: TextStyle(color: Color(0xFF38BDF8), fontSize: 11)),
+                        const SizedBox(height: 8),
+                        const Row(
+                          children: [
+                            Icon(Icons.table_chart_outlined, color: Color(0xFF10B981), size: 16),
+                            SizedBox(width: 6),
+                            Text('Pestaña Google Sheets:', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        const Text('• Proyectos_Terreno', style: TextStyle(color: Color(0xFF38BDF8), fontSize: 11)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF10B981),
+                    foregroundColor: const Color(0xFF001F2F),
+                  ),
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Entendido', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Aviso de sincronización: ${result.message}'), backgroundColor: Colors.amber),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al sincronizar con la nube: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  /// Sincroniza fotos del catálogo subidas a Google Drive y actualiza la pestaña CATALOGO_VISUAL en Excel
+  Future<void> _syncDriveCatalog() async {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Row(
+          children: [
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(color: Color(0xFF38BDF8), strokeWidth: 2),
+            ),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Sincronizando fotos de catálogo con Google Drive y actualizando Excel...',
+                style: TextStyle(color: Colors.white, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Color(0xFF1E293B),
+        duration: Duration(seconds: 4),
+      ),
+    );
+
+    try {
+      final res = await GoogleSheetsService().syncDriveCatalog();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(res.message),
+            backgroundColor: res.isSuccess ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+        if (res.isSuccess) {
+          _generatePdfsInBackground();
+          setState(() {});
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al sincronizar catálogo con Drive: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -271,34 +487,63 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
               'Resumen del Proyecto',
               style: TextStyle(
                   color: Colors.white,
-                  fontSize: 16,
+                  fontSize: 15,
                   fontWeight: FontWeight.bold),
             ),
             Text(
-              '${widget.session.project.proyecto} • ${widget.session.totalPhotos} fotos registradas',
-              style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 12),
+              '${widget.session.project.proyecto} • ${widget.session.totalPhotos} fotos',
+              style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 11),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),
         actions: [
-          IconButton(
-            tooltip: 'Matriz IPERC Continuo (Fase 2 - Ejecución)',
-            icon: const Icon(Icons.assignment_turned_in_outlined, color: Color(0xFFE3A51A)),
-            onPressed: _showIpercPreviewDialog,
+          // Botón DESTACADO e INCONFUNDIBLE: Validación del Gestor de Proyectos
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 4),
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFF59E0B),
+                foregroundColor: const Color(0xFF0F172A),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                elevation: 0,
+              ),
+              icon: const Icon(Icons.fact_check_outlined, size: 16),
+              label: Text(
+                (widget.session.excludedTools.length +
+                            widget.session.excludedMaterials.length +
+                            widget.session.excludedAccessories.length) >
+                        0
+                    ? 'Validar (${widget.session.excludedTools.length + widget.session.excludedMaterials.length + widget.session.excludedAccessories.length})'
+                    : 'Validar SST',
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+              ),
+              onPressed: _openManagerValidationSheet,
+            ),
           ),
           IconButton(
-            tooltip: 'Validación del Gestor (Excluir/Editar SST)',
-            icon: const Icon(Icons.fact_check_outlined, color: Colors.amberAccent),
-            onPressed: _openManagerValidationSheet,
+            tooltip: _isCloudSynced
+                ? 'Sincronizado con Google Sheets y Drive'
+                : 'Subir a Google Sheets y Drive (Nube)',
+            icon: Icon(
+              _isCloudSynced ? Icons.cloud_done : Icons.cloud_upload_outlined,
+              color: _isCloudSynced ? const Color(0xFF10B981) : const Color(0xFF38BDF8),
+            ),
+            onPressed: _syncSessionToCloud,
           ),
           IconButton(
-            tooltip: 'Catálogo Visual & Fotos',
-            icon: const Icon(Icons.photo_camera_back, color: Color(0xFF10B981)),
+            tooltip: 'Añadir o Gestionar Fotos',
+            icon: const Icon(Icons.add_a_photo, color: Color(0xFF38BDF8)),
             onPressed: () async {
               await Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (ctx) => const CatalogManagerScreen(),
+                  builder: (ctx) => FieldPhotoCaptureScreen(
+                    project: widget.session.project,
+                    existingSession: widget.session,
+                  ),
                 ),
               );
               if (mounted) {
@@ -307,29 +552,78 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
               }
             },
           ),
-          IconButton(
-            tooltip: 'Enviar Correo al Cliente',
-            icon: const Icon(Icons.email_outlined, color: Color(0xFF38BDF8)),
-            onPressed: _sendEmailToClient,
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert, color: Colors.white70),
+            tooltip: 'Más opciones',
+            color: const Color(0xFF1E293B),
+            onSelected: (val) async {
+              if (val == 'iperc') {
+                _showIpercPreviewDialog();
+              } else if (val == 'catalogo') {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (ctx) => const CatalogManagerScreen()),
+                );
+                if (mounted) {
+                  _generatePdfsInBackground();
+                  setState(() {});
+                }
+              } else if (val == 'email') {
+                _sendEmailToClient();
+              }
+            },
+            itemBuilder: (ctx) => [
+              const PopupMenuItem(
+                value: 'iperc',
+                child: Row(
+                  children: [
+                    Icon(Icons.assignment_turned_in_outlined, color: Color(0xFFE3A51A), size: 18),
+                    SizedBox(width: 8),
+                    Text('Matriz IPERC Continuo', style: TextStyle(color: Colors.white, fontSize: 13)),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'catalogo',
+                child: Row(
+                  children: [
+                    Icon(Icons.photo_camera_back, color: Color(0xFF10B981), size: 18),
+                    SizedBox(width: 8),
+                    Text('Catálogo Visual & Fotos', style: TextStyle(color: Colors.white, fontSize: 13)),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'email',
+                child: Row(
+                  children: [
+                    Icon(Icons.email_outlined, color: Color(0xFF38BDF8), size: 18),
+                    SizedBox(width: 8),
+                    Text('Enviar Correo al Cliente', style: TextStyle(color: Colors.white, fontSize: 13)),
+                  ],
+                ),
+              ),
+            ],
           ),
           IconButton(
             tooltip: 'Cerrar y volver',
-            icon: const Icon(Icons.check, color: Color(0xFF4ADE80)),
+            icon: const Icon(Icons.close, color: Colors.white54),
             onPressed: () => Navigator.pop(context),
           ),
         ],
         bottom: TabBar(
           controller: _tabController,
+          isScrollable: true,
           indicatorColor: const Color(0xFF38BDF8),
           labelColor: const Color(0xFF38BDF8),
           unselectedLabelColor: Colors.white60,
           labelStyle:
-              const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+              const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
           tabs: const [
-            Tab(icon: Icon(Icons.dashboard_outlined, size: 18), text: 'Dashboard'),
+            Tab(icon: Icon(Icons.dashboard_customize_outlined, size: 18), text: 'Dashboard/Gestor'),
+            Tab(icon: Icon(Icons.shield_outlined, size: 18), text: 'Control SST'),
             Tab(icon: Icon(Icons.handyman_outlined, size: 18), text: 'Almacén'),
             Tab(icon: Icon(Icons.shopping_cart_outlined, size: 18), text: 'Compras'),
-            Tab(icon: Icon(Icons.engineering_outlined, size: 18), text: 'Gestor'),
             Tab(icon: Icon(Icons.security_outlined, size: 18), text: 'Cliente SST'),
           ],
         ),
@@ -337,22 +631,703 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
       body: TabBarView(
         controller: _tabController,
         children: [
-          _buildDashboardTab(),
+          _buildMergedDashboardManagerTab(),
+          _buildPhotoHierarchyTab(),
           _buildPdfPreviewTab(_warehousePdfBytes, 'VIGILARTE_Reporte_Almacen.pdf'),
           _buildPurchasingTab(),
-          _buildPdfPreviewTab(_managerPdfBytes, 'VIGILARTE_Reporte_Gestor.pdf'),
           _buildPdfPreviewTab(_clientPdfBytes, 'VIGILARTE_Reporte_Cliente_SST.pdf'),
+        ],
+      ),
+      bottomNavigationBar: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: const BoxDecoration(
+          color: Color(0xFF1E293B),
+          border: Border(top: BorderSide(color: Colors.white12)),
+        ),
+        child: SafeArea(
+          child: Row(
+            children: [
+              // Botón: Cotizaciones a Proveedores (integrado en pantalla de reportes)
+              OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => SupplierQuotationScreen(session: widget.session),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.request_quote, color: Color(0xFF10B981), size: 18),
+                label: const Text(
+                  'Cotizaciones Web',
+                  style: TextStyle(
+                    color: Color(0xFF10B981),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12.5,
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Color(0xFF10B981), width: 1.5),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+              const SizedBox(width: 10),
+
+              // Botón Principal: Generar y Enviar Reportes a Vinculados (Compras, Almacén, Gestor, Cliente)
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _openDispatchReportsSheet,
+                  icon: const Icon(Icons.send_rounded, color: Color(0xFF001F2F), size: 18),
+                  label: const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      'Despachar Reportes ➔',
+                      style: TextStyle(
+                        color: Color(0xFF001F2F),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFE3A51A),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    elevation: 4,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Modal para el Gestor del Proyecto para despachar y compartir reportes directos con
+  /// las áreas vinculadas (Compras, Almacén, Gestor y Cliente).
+  void _openDispatchReportsSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1E293B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.send_rounded, color: Color(0xFFE3A51A), size: 24),
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Despacho y Envío de Reportes',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              'Gestor de Proyectos: Distribución a Áreas Vinculadas',
+                              style: TextStyle(color: Color(0xFF38BDF8), fontSize: 11),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white54),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Selecciona el reporte técnico para remitir inmediatamente a compras, almacén, jefatura o cliente:',
+                    style: TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // 0. Sincronización en la Nube (Google Sheets & Google Drive)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: _isCloudSynced
+                          ? const Color(0xFF065F46).withValues(alpha: 0.3)
+                          : const Color(0xFF0284C7).withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: _isCloudSynced ? const Color(0xFF10B981) : const Color(0xFF38BDF8),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          _isCloudSynced ? Icons.cloud_done : Icons.cloud_upload_outlined,
+                          color: _isCloudSynced ? const Color(0xFF10B981) : const Color(0xFF38BDF8),
+                          size: 26,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _isCloudSynced
+                                    ? '✓ Sincronizado en la Nube'
+                                    : 'Subir a Google Sheets y Drive',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              Text(
+                                _isCloudSynced
+                                    ? 'Fotos en carpeta "Vigilarte_Evidencias" y datos en "Proyectos_Terreno".'
+                                    : 'Guarda fotos con cotas y pines en Drive y registra filas en Excel.',
+                                style: const TextStyle(color: Colors.white70, fontSize: 10.5),
+                              ),
+                            ],
+                          ),
+                        ),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _isCloudSynced ? const Color(0xFF10B981) : const Color(0xFF0284C7),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            _syncSessionToCloud();
+                          },
+                          child: Text(
+                            _isCloudSynced ? 'Resubir' : 'Subir',
+                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // 1. Reporte de Compras
+                  _buildDispatchItemTile(
+                    icon: Icons.shopping_cart_outlined,
+                    iconColor: const Color(0xFF10B981),
+                    title: 'Área de Compras & Cotizaciones',
+                    subtitle: 'Lista de materiales y accesorios deducidos para adquisición',
+                    onShare: () async {
+                      if (_purchasingPdfBytes != null) {
+                        await Printing.sharePdf(
+                          bytes: _purchasingPdfBytes!,
+                          filename: 'VIGILARTE_Reporte_Compras_${widget.session.project.proyecto}.pdf',
+                          subject: 'VIGILARTE: Reporte de Compras - ${widget.session.project.proyecto}',
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Generando PDF de Compras...')),
+                        );
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 10),
+
+                  // 2. Reporte de Almacén
+                  _buildDispatchItemTile(
+                    icon: Icons.handyman_outlined,
+                    iconColor: const Color(0xFF38BDF8),
+                    title: 'Área de Almacén',
+                    subtitle: 'Herramientas sugeridas y deducidas por el sistema y accesorios',
+                    onShare: () async {
+                      if (_warehousePdfBytes != null) {
+                        await Printing.sharePdf(
+                          bytes: _warehousePdfBytes!,
+                          filename: 'VIGILARTE_Reporte_Almacen_${widget.session.project.proyecto}.pdf',
+                          subject: 'VIGILARTE: Reporte de Almacén - ${widget.session.project.proyecto}',
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Generando PDF de Almacén...')),
+                        );
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 10),
+
+                  // 3. Dossier del Gestor
+                  _buildDispatchItemTile(
+                    icon: Icons.engineering_outlined,
+                    iconColor: const Color(0xFFFBBF24),
+                    title: 'Gestor de Proyectos / Jefatura',
+                    subtitle: 'Dossier integral: validaciones, fotos con cotas y pines, y firmas',
+                    onShare: () async {
+                      if (_managerPdfBytes != null) {
+                        await Printing.sharePdf(
+                          bytes: _managerPdfBytes!,
+                          filename: 'VIGILARTE_Dossier_Gestor_${widget.session.project.proyecto}.pdf',
+                          subject: 'VIGILARTE: Dossier del Gestor - ${widget.session.project.proyecto}',
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Generando PDF del Gestor...')),
+                        );
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 10),
+
+                  // 4. Reporte Cliente SST
+                  _buildDispatchItemTile(
+                    icon: Icons.security_outlined,
+                    iconColor: const Color(0xFFEF4444),
+                    title: 'Cliente / Supervisión SST',
+                    subtitle: 'Condiciones de seguridad, requisitos y catálogo fotográfico',
+                    onShare: () async {
+                      if (_clientPdfBytes != null) {
+                        await Printing.sharePdf(
+                          bytes: _clientPdfBytes!,
+                          filename: 'VIGILARTE_Reporte_Cliente_${widget.session.project.proyecto}.pdf',
+                          subject: 'VIGILARTE: Reporte Técnico de Seguridad SST - ${widget.session.project.proyecto}',
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Generando PDF del Cliente...')),
+                        );
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 10),
+
+                  // 5. Matriz IPERC Continuo
+                  _buildDispatchItemTile(
+                    icon: Icons.assignment_turned_in_outlined,
+                    iconColor: const Color(0xFFA855F7),
+                    title: 'Matriz IPERC Continuo (Ley 29783)',
+                    subtitle: 'Matriz formal de identificación de peligros y evaluación de riesgos',
+                    onShare: () async {
+                      final ipercBytes = await IpercReportPdfService.generatePdf(widget.session);
+                      await Printing.sharePdf(
+                        bytes: ipercBytes,
+                        filename: 'VIGILARTE_Matriz_IPERC_Continuo_${widget.session.project.proyecto}.pdf',
+                        subject: 'VIGILARTE: Matriz IPERC Continuo - ${widget.session.project.proyecto}',
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 14),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDispatchItemTile({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String subtitle,
+    required VoidCallback onShare,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F172A),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white12),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            backgroundColor: iconColor.withValues(alpha: 0.18),
+            child: Icon(icon, color: iconColor, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: const TextStyle(color: Colors.white60, fontSize: 11),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          ElevatedButton.icon(
+            onPressed: onShare,
+            icon: const Icon(Icons.share, size: 14),
+            label: const Text('Enviar', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: iconColor,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  /// Pestaña 1: Dashboard Visual interactivo con fotos reales de herramientas y materiales
-  Widget _buildDashboardTab() {
+  /// Pestaña 2: Control de Jerarquías SST por Foto (ISO 45001 / Ley 29783)
+  /// Clasifica cada nivel de control entre Responsabilidad de VIGILARTE vs CLIENTE
+  Widget _buildPhotoHierarchyTab() {
+    if (widget.session.photos.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24.0),
+          child: Text(
+            'No hay fotografías en la sesión para evaluar controles de seguridad.',
+            style: TextStyle(color: Colors.white60),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+
+    if (_hierarchySelectedPhotoIndex >= widget.session.photos.length) {
+      _hierarchySelectedPhotoIndex = 0;
+    }
+
+    final activePhoto = widget.session.photos[_hierarchySelectedPhotoIndex];
+
+    final hierarchyLevels = [
+      {
+        'key': 'eliminacion',
+        'title': '1. Eliminación del Riesgo',
+        'subtitle': 'Modificar el proceso para suprimir la fuente del peligro.',
+        'icon': Icons.block,
+        'color': const Color(0xFFEF4444),
+      },
+      {
+        'key': 'sustitucion',
+        'title': '2. Sustitución de Peligro',
+        'subtitle': 'Reemplazar materiales, equipos o sustancias por otros menos lesivos.',
+        'icon': Icons.swap_horiz,
+        'color': const Color(0xFFF97316),
+      },
+      {
+        'key': 'ingenieria',
+        'title': '3. Controles de Ingeniería',
+        'subtitle': 'Canalizaciones seguras, aislamiento físico, barreras o tableros herméticos.',
+        'icon': Icons.precision_manufacturing,
+        'color': const Color(0xFF38BDF8),
+      },
+      {
+        'key': 'administrativo',
+        'title': '4. Controles Administrativos',
+        'subtitle': 'Procedimientos de trabajo seguro (PETS), permisos de trabajo y señalética.',
+        'icon': Icons.assignment,
+        'color': const Color(0xFFFBBF24),
+      },
+      {
+        'key': 'epp',
+        'title': '5. Equipos de Protección Personal (EPP)',
+        'subtitle': 'EPP básico y específico dieléctrico / trabajo en altura.',
+        'icon': Icons.health_and_safety,
+        'color': const Color(0xFF10B981),
+      },
+    ];
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Selector de foto en carrusel
+          const Text(
+            'Selecciona la fotografía a auditar:',
+            style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 64,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: widget.session.photos.length,
+              itemBuilder: (context, idx) {
+                final isSelected = idx == _hierarchySelectedPhotoIndex;
+                final photo = widget.session.photos[idx];
+
+                return GestureDetector(
+                  onTap: () {
+                    setState(() => _hierarchySelectedPhotoIndex = idx);
+                  },
+                  child: Container(
+                    width: 60,
+                    margin: const EdgeInsets.only(right: 8),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isSelected ? const Color(0xFF38BDF8) : Colors.white24,
+                        width: isSelected ? 2.5 : 1.0,
+                      ),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        photo.pngBytes.isNotEmpty
+                            ? Image.memory(photo.pngBytes, fit: BoxFit.cover)
+                            : const Center(child: Icon(Icons.image, size: 20, color: Colors.white24)),
+                        Container(
+                          color: isSelected ? Colors.transparent : Colors.black45,
+                          alignment: Alignment.bottomCenter,
+                          padding: const EdgeInsets.all(2),
+                          child: Text(
+                            '#${photo.photoNumber}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Tarjeta de la fotografía activa
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E293B),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFF38BDF8).withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: SizedBox(
+                    width: 52,
+                    height: 52,
+                    child: activePhoto.pngBytes.isNotEmpty
+                        ? Image.memory(activePhoto.pngBytes, fit: BoxFit.cover)
+                        : const Icon(Icons.image, color: Colors.white24),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Foto #${activePhoto.photoNumber} • ${activePhoto.areaSector}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${activePhoto.peligros.length} peligros identificados • ${activePhoto.linearMeasurements.length} cotas',
+                        style: const TextStyle(color: Colors.white54, fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // Banner explicativo de responsabilidades
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0F172A),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.white12),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.info_outline, color: Color(0xFF38BDF8), size: 20),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Define para cada nivel de jerarquía quién asume la responsabilidad:\n• VIGILARTE: Se presupuesta y cotiza en la propuesta comercial.\n• CLIENTE: Requisito previo exigible al cliente antes de ejecutar la obra.',
+                    style: TextStyle(color: Colors.white70, fontSize: 11, height: 1.3),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Los 5 niveles de la Jerarquía de Controles
+          ...hierarchyLevels.map((lvl) {
+            final key = lvl['key'] as String;
+            final title = lvl['title'] as String;
+            final subtitle = lvl['subtitle'] as String;
+            final icon = lvl['icon'] as IconData;
+            final color = lvl['color'] as Color;
+
+            final currentResp = activePhoto.getResponsibility(key);
+            final currentDesc = activePhoto.getControlDescription(key);
+
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E293B),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: currentResp == 'VIGILARTE'
+                      ? const Color(0xFF10B981).withValues(alpha: 0.5)
+                      : const Color(0xFF38BDF8).withValues(alpha: 0.5),
+                  width: 1.2,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(icon, color: color, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          title,
+                          style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(color: Colors.white54, fontSize: 11),
+                  ),
+                  const SizedBox(height: 10),
+
+                  // Toggle Segmentado: VIGILARTE vs CLIENTE
+                  Row(
+                    children: [
+                      const Text(
+                        '¿Responsable?:',
+                        style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: SegmentedButton<String>(
+                          segments: const [
+                            ButtonSegment(
+                              value: 'VIGILARTE',
+                              icon: Icon(Icons.business, size: 14),
+                              label: Text('VIGILARTE (Cotizable)', style: TextStyle(fontSize: 10)),
+                            ),
+                            ButtonSegment(
+                              value: 'CLIENTE',
+                              icon: Icon(Icons.person, size: 14),
+                              label: Text('CLIENTE (Previo)', style: TextStyle(fontSize: 10)),
+                            ),
+                          ],
+                          selected: {currentResp},
+                          onSelectionChanged: (val) {
+                            final newResp = val.first;
+                            final updatedMap = Map<String, String>.from(activePhoto.photoHierarchyResponsibility);
+                            updatedMap[key] = newResp;
+                            widget.session.setPhotoHierarchy(
+                              _hierarchySelectedPhotoIndex,
+                              responsibilities: updatedMap,
+                              controls: activePhoto.photoHierarchyControls,
+                            );
+                            ProjectStorageService.saveSession(widget.session);
+                            setState(() {});
+                          },
+                          style: ButtonStyle(
+                            visualDensity: VisualDensity.compact,
+                            backgroundColor: WidgetStateProperty.resolveWith((states) {
+                              if (states.contains(WidgetState.selected)) {
+                                return currentResp == 'VIGILARTE'
+                                    ? const Color(0xFF10B981)
+                                    : const Color(0xFF0284C7);
+                              }
+                              return const Color(0xFF0F172A);
+                            }),
+                            foregroundColor: const WidgetStatePropertyAll(Colors.white),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+
+                  // Campo de texto para detalle del control
+                  TextFormField(
+                    initialValue: currentDesc,
+                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      labelText: 'Medida o acción de control adoptada (opcional)',
+                      labelStyle: const TextStyle(color: Colors.white54, fontSize: 11),
+                      filled: true,
+                      fillColor: const Color(0xFF0F172A),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: Colors.white12),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: Colors.white12),
+                      ),
+                    ),
+                    onChanged: (text) {
+                      final updatedControls = Map<String, String>.from(activePhoto.photoHierarchyControls);
+                      updatedControls[key] = text;
+                      widget.session.setPhotoHierarchy(
+                        _hierarchySelectedPhotoIndex,
+                        responsibilities: activePhoto.photoHierarchyResponsibility,
+                        controls: updatedControls,
+                      );
+                      ProjectStorageService.saveSession(widget.session);
+                    },
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  /// Pestaña 1: Dashboard/Gestor - Fusión integral de Dashboard y Gestor de Proyecto
+  Widget _buildMergedDashboardManagerTab() {
     final tools = widget.session.getValidatedToolsWithFrequency();
     final materials = widget.session.getValidatedMaterialsWithFrequency();
-    final accessories = widget.session.getValidatedConsolidatedAccessories();
-    final accessoriesFreq = widget.session.getAccessoriesWithFrequency();
     final int excludedCount = widget.session.excludedTools.length +
         widget.session.excludedMaterials.length +
         widget.session.excludedAccessories.length;
@@ -360,37 +1335,86 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        // 1. Métricas clave
-        Row(
-          children: [
-            _buildKpiCard(
-              title: 'Herramientas Críticas',
-              count: '${tools.where((t) => t.isIndispensable).length}',
-              subtitle: 'Validadas para almacén',
-              color: const Color(0xFFEF4444),
-              icon: Icons.handyman,
+        // 1. Sincronización en la Nube (Google Sheets & Google Drive) - Permanece
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: _isCloudSynced
+                  ? [const Color(0xFF065F46).withValues(alpha: 0.4), const Color(0xFF1E293B)]
+                  : [const Color(0xFF0369A1).withValues(alpha: 0.35), const Color(0xFF1E293B)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
             ),
-            const SizedBox(width: 10),
-            _buildKpiCard(
-              title: 'Materiales Clave',
-              count: '${materials.where((m) => m.isIndispensable).length}',
-              subtitle: 'Validados para compras',
-              color: const Color(0xFF38BDF8),
-              icon: Icons.inventory_2,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: _isCloudSynced ? const Color(0xFF10B981) : const Color(0xFF38BDF8),
+              width: 1.2,
             ),
-            const SizedBox(width: 10),
-            _buildKpiCard(
-              title: 'Accesorios',
-              count: '${accessories.length}',
-              subtitle: 'Deducidos automáticamente',
-              color: const Color(0xFF4ADE80),
-              icon: Icons.category,
-            ),
-          ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: _isCloudSynced
+                      ? const Color(0xFF10B981).withValues(alpha: 0.2)
+                      : const Color(0xFF0284C7).withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  _isCloudSynced ? Icons.cloud_done : Icons.cloud_upload_outlined,
+                  color: _isCloudSynced ? const Color(0xFF10B981) : const Color(0xFF38BDF8),
+                  size: 26,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _isCloudSynced
+                          ? '✓ Sincronizado en la Nube'
+                          : 'Sincronizar con Google Sheets & Drive',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _isCloudSynced
+                          ? 'Evidencias fotográficas en "Vigilarte_Evidencias" y datos en "Proyectos_Terreno".'
+                          : 'Sube las fotos (con cotas y pines) a la carpeta de Drive y registra las filas en tu Excel.',
+                      style: const TextStyle(color: Colors.white70, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor:
+                      _isCloudSynced ? const Color(0xFF10B981) : const Color(0xFF0284C7),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                icon: Icon(_isCloudSynced ? Icons.refresh : Icons.cloud_upload, size: 14),
+                label: Text(
+                  _isCloudSynced ? 'Resubir' : 'Subir',
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                ),
+                onPressed: _syncSessionToCloud,
+              ),
+            ],
+          ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
 
-        // Banner de Validación del Gestor de Proyectos
+        // 2. Banner de Validación del Gestor de Proyectos
         Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
@@ -457,291 +1481,152 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
             ],
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
 
-        // 2. Banner de envío rápido al cliente
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF0369A1), Color(0xFF0F172A)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: const Color(0xFF0284C7)),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.mark_email_read, color: Color(0xFF38BDF8), size: 32),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Reporte para el Cliente Listo',
-                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Incluye propuesta de canalizaciones y matriz de seguridad SST de ${widget.session.totalPhotos} fotografías.',
-                      style: const TextStyle(color: Colors.white70, fontSize: 11),
-                    ),
-                  ],
-                ),
-              ),
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF38BDF8),
-                  foregroundColor: const Color(0xFF0F172A),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-                icon: const Icon(Icons.send, size: 14),
-                label: const Text('Enviar', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                onPressed: _sendEmailToClient,
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-
-        // Banner de Acceso al Catálogo Visual y Sincronización Drive (Métodos 1 y 2)
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
+        // 3. Catálogo Visual Opcional Expandible - Permanece
+        Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: Material(
             color: const Color(0xFF1E293B),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFF38BDF8).withValues(alpha: 0.3)),
-          ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0F172A),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.add_a_photo, color: Color(0xFF10B981), size: 22),
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Base Visual de Herramientas & Materiales',
-                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
-                    ),
-                    SizedBox(height: 2),
-                    Text(
-                      'Toma fotos reales en campo o sincroniza fotos desde Google Drive.',
-                      style: TextStyle(color: Colors.white60, fontSize: 11),
-                    ),
-                  ],
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: const BorderSide(color: Color(0xFF334155)),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: ExpansionTile(
+              title: const Text(
+                '📸 Ver Tarjetas de Catálogo Visual',
+                style: TextStyle(
+                  color: Color(0xFF38BDF8),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0284C7),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              subtitle: const Text(
+                'Fichas técnicas y fotos de herramientas y materiales validados',
+                style: TextStyle(color: Colors.white54, fontSize: 11),
+              ),
+              iconColor: const Color(0xFF38BDF8),
+              collapsedIconColor: const Color(0xFF94A3B8),
+              childrenPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              children: [
+                // Barra de sincronización y administración del catálogo
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12, top: 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF065F46),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          icon: const Icon(Icons.sync, size: 16, color: Color(0xFF10B981)),
+                          label: const Text(
+                            'Actualizar Enlaces desde Drive',
+                            style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          onPressed: _syncDriveCatalog,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF38BDF8),
+                          side: const BorderSide(color: Color(0xFF0284C7)),
+                          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        icon: const Icon(Icons.manage_search, size: 16),
+                        label: const Text(
+                          'Catálogo',
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                        ),
+                        onPressed: () async {
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (ctx) => const CatalogManagerScreen()),
+                          );
+                          if (mounted) {
+                            _generatePdfsInBackground();
+                            setState(() {});
+                          }
+                        },
+                      ),
+                    ],
+                  ),
                 ),
-                icon: const Icon(Icons.manage_search, size: 15),
-                label: const Text('Catálogo', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                onPressed: () async {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (ctx) => const CatalogManagerScreen(),
-                    ),
+                ...tools.map((tool) {
+                  final visual = CatalogVisualService.getItemInfo(tool.name, isMaterial: false);
+                  return _buildVisualCard(
+                    item: visual,
+                    frequency: tool,
+                    isTool: true,
                   );
-                  if (mounted) {
-                    _generatePdfsInBackground();
-                    setState(() {});
-                  }
-                },
-              ),
-            ],
+                }),
+                ...materials.map((mat) {
+                  final visual = CatalogVisualService.getItemInfo(mat.name, isMaterial: true);
+                  return _buildVisualCard(
+                    item: visual,
+                    frequency: mat,
+                    isTool: false,
+                  );
+                }),
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 20),
 
-        // 3. SECCIÓN DE ANALÍTICA GRÁFICA DE FRECUENCIAS Y PORCENTAJES
-        _buildSectionHeader(
-          icon: Icons.analytics_outlined,
-          title: 'ANÁLISIS GRÁFICO DE RECURSOS EN OBRA',
-          subtitle: 'Frecuencia de repetición y porcentajes de presencia en las fotos del proyecto',
+        // 4. Reporte de Gestor de Proyecto (Metadata) - Permanece al final de la pestaña
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: _buildSectionHeader(
+                icon: Icons.engineering_outlined,
+                title: 'REPORTE DE GESTOR DE PROYECTO (METADATA)',
+                subtitle: 'Dossier técnico, metadata estructural, canalizaciones y firmas',
+              ),
+            ),
+            if (_managerPdfBytes != null)
+              IconButton(
+                tooltip: 'Ver en pantalla completa',
+                icon: const Icon(Icons.fullscreen, color: Color(0xFF38BDF8)),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (ctx) => Scaffold(
+                        appBar: AppBar(
+                          title: const Text('Reporte de Gestor de Proyecto (Metadata)'),
+                          backgroundColor: const Color(0xFF0F172A),
+                        ),
+                        body: _buildPdfPreviewTab(_managerPdfBytes, 'VIGILARTE_Reporte_Gestor.pdf'),
+                      ),
+                    ),
+                  );
+                },
+              ),
+          ],
         ),
-        const SizedBox(height: 12),
-
-        // Selector de Categoría (Pestañas interactivas de Gráficos)
+        const SizedBox(height: 10),
         Container(
-          padding: const EdgeInsets.all(4),
+          height: 650,
           decoration: BoxDecoration(
-            color: const Color(0xFF1E293B),
+            color: const Color(0xFF0F172A),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: const Color(0xFF334155)),
           ),
-          child: Row(
-            children: [
-              _buildCategoryTab(
-                label: 'Herramientas',
-                count: tools.length,
-                icon: Icons.handyman,
-                isSelected: _selectedAnalyticsCategory == 0,
-                color: const Color(0xFF38BDF8),
-                onTap: () => setState(() => _selectedAnalyticsCategory = 0),
-              ),
-              const SizedBox(width: 4),
-              _buildCategoryTab(
-                label: 'Materiales',
-                count: materials.length,
-                icon: Icons.inventory_2,
-                isSelected: _selectedAnalyticsCategory == 1,
-                color: const Color(0xFF10B981),
-                onTap: () => setState(() => _selectedAnalyticsCategory = 1),
-              ),
-              const SizedBox(width: 4),
-              _buildCategoryTab(
-                label: 'Accesorios',
-                count: accessoriesFreq.length,
-                icon: Icons.category,
-                isSelected: _selectedAnalyticsCategory == 2,
-                color: const Color(0xFFA855F7),
-                onTap: () => setState(() => _selectedAnalyticsCategory = 2),
-              ),
-            ],
-          ),
+          clipBehavior: Clip.antiAlias,
+          child: _buildPdfPreviewTab(_managerPdfBytes, 'VIGILARTE_Reporte_Gestor.pdf'),
         ),
-        const SizedBox(height: 16),
-
-        // Visualizaciones Gráficas según Categoría Seleccionada
-        if (_selectedAnalyticsCategory == 0) ...[
-          // Herramientas: Gráfico Circular + Gráfico de Barras de Frecuencia
-          DonutChartWidget(
-            items: tools,
-            title: 'Distribución Porcentual de Herramientas',
-            centerSubtitle: 'Herramientas',
-          ),
-          const SizedBox(height: 16),
-          FrequencyBarChartWidget(
-            items: tools,
-            title: 'Frecuencia de Herramientas en Fotos',
-            accentColor: const Color(0xFF38BDF8),
-            icon: Icons.handyman,
-          ),
-        ] else if (_selectedAnalyticsCategory == 1) ...[
-          // Materiales: Gráfico Circular + Gráfico de Barras de Frecuencia
-          DonutChartWidget(
-            items: materials,
-            title: 'Distribución Porcentual de Materiales',
-            centerSubtitle: 'Materiales',
-          ),
-          const SizedBox(height: 16),
-          FrequencyBarChartWidget(
-            items: materials,
-            title: 'Frecuencia de Materiales en Fotos',
-            accentColor: const Color(0xFF10B981),
-            icon: Icons.inventory_2,
-          ),
-        ] else ...[
-          // Accesorios: Gráfico Circular + Gráfico de Barras de Frecuencia
-          DonutChartWidget(
-            items: accessoriesFreq,
-            title: 'Distribución Porcentual de Accesorios',
-            centerSubtitle: 'Accesorios',
-          ),
-          const SizedBox(height: 16),
-          FrequencyBarChartWidget(
-            items: accessoriesFreq,
-            title: 'Frecuencia de Accesorios Deducidos',
-            accentColor: const Color(0xFFA855F7),
-            icon: Icons.category,
-          ),
-        ],
-
-        const SizedBox(height: 16),
-
-        // Catálogo Visual Opcional Expandible
-        Theme(
-          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-          child: ExpansionTile(
-            title: const Text(
-              '📸 Ver Tarjetas de Catálogo Visual',
-              style: TextStyle(
-                color: Color(0xFF94A3B8),
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            iconColor: const Color(0xFF38BDF8),
-            collapsedIconColor: const Color(0xFF94A3B8),
-            children: [
-              ...tools.map((tool) {
-                final visual = CatalogVisualService.getItemInfo(tool.name, isMaterial: false);
-                return _buildVisualCard(
-                  item: visual,
-                  frequency: tool,
-                  isTool: true,
-                );
-              }),
-              ...materials.map((mat) {
-                final visual = CatalogVisualService.getItemInfo(mat.name, isMaterial: true);
-                return _buildVisualCard(
-                  item: visual,
-                  frequency: mat,
-                  isTool: false,
-                );
-              }),
-            ],
-          ),
-        ),
-        const SizedBox(height: 40),
+        const SizedBox(height: 32),
       ],
-    );
-  }
-
-  Widget _buildCategoryTab({
-    required String label,
-    required int count,
-    required IconData icon,
-    required bool isSelected,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-          decoration: BoxDecoration(
-            color: isSelected ? color.withValues(alpha: 0.2) : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-            border: isSelected ? Border.all(color: color, width: 1.2) : null,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, color: isSelected ? color : Colors.white60, size: 16),
-              const SizedBox(height: 2),
-              Text(
-                '$label ($count)',
-                style: TextStyle(
-                  color: isSelected ? Colors.white : Colors.white60,
-                  fontSize: 10.5,
-                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 
@@ -972,56 +1857,6 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
     );
   }
 
-  Widget _buildKpiCard({
-    required String title,
-    required String count,
-    required String subtitle,
-    required Color color,
-    required IconData icon,
-  }) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1E293B),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFF334155)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  count,
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Icon(icon, color: color.withValues(alpha: 0.7), size: 16),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              title,
-              style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            Text(
-              subtitle,
-              style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 8.5),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   /// Visor PDF integrado con zoom, descarga, impresión y compartir
   Widget _buildPdfPreviewTab(Uint8List? pdfBytes, String filename) {

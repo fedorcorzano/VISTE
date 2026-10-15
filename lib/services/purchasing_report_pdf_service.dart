@@ -1,10 +1,24 @@
 import 'dart:typed_data';
+import 'package:http/http.dart' as http;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../models/session_evidence_model.dart';
 import 'catalog_visual_service.dart';
 
 class PurchasingReportPdfService {
+  /// Descarga bytes de imagen de catálogo de forma segura con timeout
+  static Future<Uint8List?> _fetchImage(String url) async {
+    if (url.isEmpty || !url.startsWith('http')) return null;
+    try {
+      final client = http.Client();
+      final res = await client.get(Uri.parse(url)).timeout(const Duration(seconds: 4));
+      if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
+        return res.bodyBytes;
+      }
+    } catch (_) {}
+    return null;
+  }
+
   /// Genera el reporte especializado exclusivo para Compras y Cotizaciones de Materiales y Accesorios
   /// con tabla ejecutiva, fotos comerciales, especificaciones técnicas y cantidades a cotizar.
   static Future<Uint8List> generatePdf(ProjectSessionModel session) async {
@@ -13,6 +27,31 @@ class PurchasingReportPdfService {
     final materials = session.getValidatedMaterialsWithFrequency();
     final accessories = session.getValidatedConsolidatedAccessories();
     final linearMetersMap = session.getConsolidatedLinearMeters();
+
+    // Precarga paralela de imágenes reales de materiales y accesorios desde Drive o web
+    final Map<String, Uint8List> imageCache = {};
+    final Set<String> urlsToFetch = {};
+    for (final m in materials) {
+      final info = CatalogVisualService.getItemInfo(m.name, isMaterial: true);
+      if (info.imageUrl.isNotEmpty && info.imageUrl.startsWith('http')) {
+        urlsToFetch.add(info.imageUrl);
+      }
+    }
+    for (final a in accessories) {
+      final info = CatalogVisualService.getItemInfo(a, isMaterial: true);
+      if (info.imageUrl.isNotEmpty && info.imageUrl.startsWith('http')) {
+        urlsToFetch.add(info.imageUrl);
+      }
+    }
+
+    if (urlsToFetch.isNotEmpty) {
+      await Future.wait(urlsToFetch.map((url) async {
+        final bytes = await _fetchImage(url);
+        if (bytes != null) {
+          imageCache[url] = bytes;
+        }
+      }));
+    }
 
     const primaryColor = PdfColor.fromInt(0xFF0F172A); // Slate 900
     const accentColor = PdfColor.fromInt(0xFF0284C7); // Sky 600
@@ -229,17 +268,29 @@ class PurchasingReportPdfService {
                     // Foto
                     pw.Container(
                       height: 38,
+                      width: 38,
                       margin: const pw.EdgeInsets.all(2),
                       decoration: const pw.BoxDecoration(
                         color: PdfColor.fromInt(0xFFF1F5F9),
                         borderRadius: pw.BorderRadius.all(pw.Radius.circular(3)),
                       ),
-                      child: pw.Center(
-                        child: pw.Text(
-                          '[Foto]',
-                          style: const pw.TextStyle(fontSize: 6.5, color: PdfColors.grey600),
-                        ),
-                      ),
+                      child: imageCache[visualInfo.imageUrl] != null
+                          ? pw.ClipRRect(
+                              horizontalRadius: 3,
+                              verticalRadius: 3,
+                              child: pw.Image(
+                                pw.MemoryImage(imageCache[visualInfo.imageUrl]!),
+                                fit: pw.BoxFit.cover,
+                                width: 38,
+                                height: 38,
+                              ),
+                            )
+                          : pw.Center(
+                              child: pw.Text(
+                                '[Foto]',
+                                style: const pw.TextStyle(fontSize: 6.5, color: PdfColors.grey600),
+                              ),
+                            ),
                     ),
                     // Descripción
                     pw.Padding(
@@ -301,17 +352,29 @@ class PurchasingReportPdfService {
                     // Foto
                     pw.Container(
                       height: 38,
+                      width: 38,
                       margin: const pw.EdgeInsets.all(2),
                       decoration: const pw.BoxDecoration(
                         color: PdfColor.fromInt(0xFFF1F5F9),
                         borderRadius: pw.BorderRadius.all(pw.Radius.circular(3)),
                       ),
-                      child: pw.Center(
-                        child: pw.Text(
-                          '[Foto]',
-                          style: const pw.TextStyle(fontSize: 6.5, color: PdfColors.grey600),
-                        ),
-                      ),
+                      child: imageCache[visualInfo.imageUrl] != null
+                          ? pw.ClipRRect(
+                              horizontalRadius: 3,
+                              verticalRadius: 3,
+                              child: pw.Image(
+                                pw.MemoryImage(imageCache[visualInfo.imageUrl]!),
+                                fit: pw.BoxFit.cover,
+                                width: 38,
+                                height: 38,
+                              ),
+                            )
+                          : pw.Center(
+                              child: pw.Text(
+                                '[Foto]',
+                                style: const pw.TextStyle(fontSize: 6.5, color: PdfColors.grey600),
+                              ),
+                            ),
                     ),
                     // Descripción
                     pw.Padding(

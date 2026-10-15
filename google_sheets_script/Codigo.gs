@@ -26,7 +26,8 @@ function doPost(e) {
       return handleSyncDriveCatalog();
     }
     if (payload.action === "submit_supplier_quote") {
-      return handleSubmitSupplierQuote(payload);
+      const res = handleSubmitSupplierQuote(payload);
+      return createJsonResponse(res, 200);
     }
 
     // Datos del proyecto y sesión
@@ -721,7 +722,19 @@ function createJsonResponse(data, statusCode) {
 function handleSupplierQuotationHtml(e) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const p = (e && e.parameter) ? e.parameter : {};
-  const project = (p.project || p.Project) ? decodeURIComponent(p.project || p.Project) : "Proyecto General VIGILARTE";
+  
+  function safeParam(val) {
+    if (!val) return "";
+    var str = val.toString().trim();
+    try {
+      if (str.indexOf("%") !== -1) {
+        return decodeURIComponent(str);
+      }
+    } catch (_) {}
+    return str;
+  }
+  
+  const project = safeParam(p.project || p.Project) || "Proyecto General VIGILARTE";
   
   // Leer datos visuales existentes para enriquecer con imágenes y nombres comerciales
   const catData = getCatalogVisualData(ss);
@@ -732,7 +745,7 @@ function handleSupplierQuotationHtml(e) {
 
   // 1. Obtener ítems solicitados vía parámetro
   let itemsToQuote = [];
-  const rawItemsParam = (p.items || p.Items) ? decodeURIComponent(p.items || p.Items) : "";
+  const rawItemsParam = safeParam(p.items || p.Items);
   if (rawItemsParam) {
     const rawItems = rawItemsParam.split(",");
     const seen = {};
@@ -939,33 +952,33 @@ function handleSupplierQuotationHtml(e) {
         quotes: quotes
       };
 
+      function showSuccess() {
+        document.getElementById("quoteForm").style.display = "none";
+        document.getElementById("successBox").style.display = "block";
+      }
+
+      function sendViaFetch() {
+        var targetUrl = "${scriptUrl}" || (window.location.href ? window.location.href.split("?")[0] : "");
+        fetch(targetUrl, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify(payload)
+        })
+        .then(function() { showSuccess(); })
+        .catch(function() { showSuccess(); });
+      }
+
       // Si se ejecuta en contexto nativo de Apps Script (HtmlService)
       if (typeof google !== "undefined" && google.script && google.script.run) {
         google.script.run
-          .withSuccessHandler(function() {
-            document.getElementById("quoteForm").style.display = "none";
-            document.getElementById("successBox").style.display = "block";
-          })
-          .withFailureHandler(function() {
-            document.getElementById("quoteForm").style.display = "none";
-            document.getElementById("successBox").style.display = "block";
+          .withSuccessHandler(function() { showSuccess(); })
+          .withFailureHandler(function(err) {
+            console.warn("Fallo nativo, enviando via fetch:", err);
+            sendViaFetch();
           })
           .handleSubmitSupplierQuote(payload);
       } else {
-        // Fallback vía fetch
-        fetch("${scriptUrl}", {
-          method: "POST",
-          mode: "no-cors",
-          body: JSON.stringify(payload)
-        })
-        .then(function() {
-          document.getElementById("quoteForm").style.display = "none";
-          document.getElementById("successBox").style.display = "block";
-        })
-        .catch(function() {
-          document.getElementById("quoteForm").style.display = "none";
-          document.getElementById("successBox").style.display = "block";
-        });
+        sendViaFetch();
       }
     });
   </script>
@@ -1015,7 +1028,7 @@ function handleSubmitSupplierQuote(payload) {
     ]);
   });
 
-  return createJsonResponse({ status: "success", message: "Cotización registrada para " + quotes.length + " ítems.", count: quotes.length }, 200);
+  return { status: "success", message: "Cotización registrada para " + quotes.length + " ítems.", count: quotes.length };
 }
 
 function handleGetSupplierQuotes(projectName) {

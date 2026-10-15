@@ -21,7 +21,10 @@ import '../services/google_sheets_service.dart';
 import '../services/project_storage_service.dart';
 import '../services/ssoma_ai_service.dart';
 import '../services/voice_recognition_service.dart';
+import '../widgets/compact_photo_info_badge.dart';
+import '../widgets/manager_validation_sheet.dart';
 import '../widgets/measurement_overlay_widget.dart';
+import '../widgets/voice_input_button.dart';
 import 'project_summary_report_screen.dart';
 
 /// Rota la imagen 90° en segundo plano en un Isolate para no bloquear la interfaz (evita ANR y OOM)
@@ -56,6 +59,7 @@ class StickerPaletteSheet extends StatefulWidget {
   final Function(StickerModel) onStickerSelected;
   final String? title;
   final int initialTabIndex;
+  final String clasificacion;
 
   const StickerPaletteSheet({
     super.key,
@@ -63,6 +67,7 @@ class StickerPaletteSheet extends StatefulWidget {
     required this.onStickerSelected,
     this.title,
     this.initialTabIndex = 0,
+    this.clasificacion = 'Comercial',
   });
 
   @override
@@ -273,7 +278,12 @@ class _StickerPaletteSheetState extends State<StickerPaletteSheet> {
                     category: StickerCategory.estructuras,
                   ),
                   _buildCatalogGrid(
-                    items: _filterList(materiales),
+                    items: _filterList(
+                      TechnicalCatalogMatrix.getPrioritizedMaterials(
+                        widget.clasificacion,
+                        materiales,
+                      ),
+                    ),
                     category: StickerCategory.materiales,
                   ),
                   _buildCatalogGrid(
@@ -302,6 +312,10 @@ class _StickerPaletteSheetState extends State<StickerPaletteSheet> {
       );
     }
 
+    final priorityMaterials = (category == StickerCategory.materiales)
+        ? (TechnicalCatalogMatrix.materialesPorClasificacion[widget.clasificacion] ?? [])
+        : <String>[];
+
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Wrap(
@@ -309,28 +323,40 @@ class _StickerPaletteSheetState extends State<StickerPaletteSheet> {
         runSpacing: 10,
         children: items.map((item) {
           final sticker = StickerModel.fromCatalog(item, category);
+          final bool isPriority = priorityMaterials.contains(item);
+
           return InkWell(
             onTap: () => widget.onStickerSelected(sticker),
             borderRadius: BorderRadius.circular(10),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                color: sticker.backgroundColor.withValues(alpha: 0.4),
+                color: isPriority
+                    ? const Color(0xFF00E676).withValues(alpha: 0.22)
+                    : sticker.backgroundColor.withValues(alpha: 0.4),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: sticker.accentColor, width: 1.5),
+                border: Border.all(
+                  color: isPriority ? const Color(0xFF00E676) : sticker.accentColor,
+                  width: isPriority ? 2.0 : 1.5,
+                ),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(sticker.icon, color: sticker.accentColor, size: 18),
-                  const SizedBox(width: 8),
+                  if (isPriority) ...[
+                    const Icon(Icons.star, color: Color(0xFF00E676), size: 15),
+                    const SizedBox(width: 4),
+                  ] else ...[
+                    Icon(sticker.icon, color: sticker.accentColor, size: 18),
+                    const SizedBox(width: 8),
+                  ],
                   Flexible(
                     child: Text(
                       item,
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: isPriority ? const Color(0xFF4ADE80) : Colors.white,
                         fontSize: 13,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: isPriority ? FontWeight.bold : FontWeight.w600,
                       ),
                     ),
                   ),
@@ -402,6 +428,141 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
   Offset? _guidedTargetB;
   bool _isGuidingOriginA = false;
   bool _isGuidingDestinationB = false;
+
+  int? _editingSessionPhotoIndex; // Índice de la foto de la sesión que se está editando
+
+  /// Abre la hoja modal de Validación del Gestor de Proyectos (Herramientas, Materiales y Responsables SST)
+  void _openManagerValidationSheet() {
+    final bool hasUnsavedEvidence = _placedStickers.isNotEmpty || _linearMeasurements.isNotEmpty;
+    bool tempRecordAdded = false;
+
+    if (hasUnsavedEvidence && _sessionModel.photos.isEmpty) {
+      final currentMat = _placedStickers
+          .where((s) => s.sticker.category == StickerCategory.materiales)
+          .map((s) => s.sticker.title)
+          .toList();
+      currentMat.addAll(_linearMeasurements
+          .map((m) => m.material)
+          .where((m) => m.isNotEmpty && m != 'Por definir'));
+
+      final currentEst = _placedStickers
+          .where((s) => s.sticker.category == StickerCategory.estructuras)
+          .map((s) => s.sticker.title)
+          .toList();
+
+      final currentPel = _placedStickers
+          .where((s) => s.sticker.category == StickerCategory.peligros)
+          .map((s) => s.sticker.title)
+          .toList();
+
+      final tools = TechnicalCatalogMatrix.deduceHerramientas(
+        estructuras: currentEst,
+        materiales: currentMat,
+      );
+      final acc = TechnicalCatalogMatrix.deduceAccesorios(materiales: currentMat);
+
+      _sessionModel.photos.add(
+        SessionEvidenceRecord(
+          photoNumber: _sessionPhotoNumber,
+          areaSector: 'Foto #$_sessionPhotoNumber',
+          localImagePath: '',
+          pngBytes: Uint8List(0),
+          estructuras: currentEst,
+          materiales: currentMat,
+          peligros: currentPel,
+          herramientas: tools,
+          accesorios: acc,
+          linearMeasurements: List.from(_linearMeasurements),
+          placedPins: List.from(_placedStickers),
+          timestamp: DateTime.now(),
+        ),
+      );
+      tempRecordAdded = true;
+    }
+
+    showManagerValidationSheet(
+      context: context,
+      session: _sessionModel,
+      onSaved: () {
+        if (tempRecordAdded &&
+            _sessionModel.photos.length == 1 &&
+            _sessionModel.photos.first.localImagePath.isEmpty) {
+          _sessionModel.photos.clear();
+        }
+        setState(() {});
+      },
+    );
+  }
+
+  /// Obtiene el número sucesivo del pin dentro de su respectiva categoría (Estructuras: 1,2.. Materiales: 1,2.. Peligros: 1,2..)
+  int _getCategoryPinNumber(PlacedSticker target) {
+    int counter = 0;
+    for (final s in _placedStickers) {
+      if (s.sticker.category == target.sticker.category) {
+        counter++;
+        if (identical(s, target) || (s.id.isNotEmpty && s.id == target.id)) {
+          return counter;
+        }
+      }
+    }
+    return counter > 0 ? counter : 1;
+  }
+
+  /// Carga una fotografía existente de la sesión para gestionar sus pines y cotas
+  Future<void> _loadSessionPhotoForEditing(int index) async {
+    if (index < 0 || index >= _sessionModel.photos.length) return;
+    final record = _sessionModel.photos[index];
+    setState(() => _isProcessing = true);
+    try {
+      Uint8List imageToLoad = record.pngBytes;
+      // Cargar la foto base sin stickers si existe para no duplicar trazos
+      final rawPath = record.localImagePath.replaceAll('.png', '_raw.jpg');
+      final rawFile = File(rawPath);
+      if (rawFile.existsSync()) {
+        try {
+          imageToLoad = await rawFile.readAsBytes();
+        } catch (_) {}
+      } else if (imageToLoad.isEmpty && record.localImagePath.isNotEmpty) {
+        final f = File(record.localImagePath);
+        if (f.existsSync()) {
+          try {
+            imageToLoad = await f.readAsBytes();
+          } catch (_) {}
+        }
+      }
+
+      setState(() {
+        _editingSessionPhotoIndex = index;
+        _sessionPhotoNumber = record.photoNumber;
+        _capturedImageBytes = imageToLoad.isNotEmpty ? imageToLoad : null;
+        _placedStickers.clear();
+        _placedStickers.addAll(record.placedPins.map((p) => p.copyWith()));
+        _linearMeasurements.clear();
+        _linearMeasurements.addAll(record.linearMeasurements.map((m) => m.copyWith()));
+        _resetZoom();
+      });
+
+      if (imageToLoad.isNotEmpty) {
+        await _updateImageAspectRatio(imageToLoad);
+      }
+    } catch (e) {
+      debugPrint('Error al cargar foto de sesión para edición: $e');
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
+    }
+  }
+
+  /// Inicia el relevamiento de una nueva foto en la sesión
+  void _startNewSessionPhoto() {
+    setState(() {
+      _editingSessionPhotoIndex = null;
+      _sessionPhotoNumber = _sessionModel.photos.length + 1;
+      _capturedImageBytes = null;
+      _placedStickers.clear();
+      _linearMeasurements.clear();
+      _resetZoom();
+    });
+  }
 
   /// Extrae materiales de canalización / tubería colocados como pines en la foto para el selector contextual
   List<String> _getContextualConduitMaterials() {
@@ -480,6 +641,8 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
         contextualConduits: _getContextualConduitMaterials(),
         voiceService: _voiceService,
         existingMeasurement: m,
+        clasificacion: widget.project.clasificacion,
+        allAvailableMaterials: _catalogs['materiales'],
       ),
     );
 
@@ -838,6 +1001,11 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
       _sessionModel = widget.existingSession!;
       _sessionPhotoNumber = _sessionModel.photos.length + 1;
       _savedPhotosCount = _sessionModel.photos.length;
+      if (widget.initialImageBytes == null && _sessionModel.photos.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _loadSessionPhotoForEditing(0);
+        });
+      }
     } else {
       _sessionModel = ProjectSessionModel(project: widget.project);
     }
@@ -1024,6 +1192,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
         title: title,
         initialTabIndex: initialTabIndex,
         catalogs: _catalogs,
+        clasificacion: widget.project.clasificacion,
         onStickerSelected: (StickerModel sticker) {
           Navigator.pop(ctx);
           setState(() {
@@ -2326,6 +2495,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
       }
       pngBytes = byteData.buffer.asUint8List();
       clientPngBytes = pngBytes; // Por defecto
+      measurementsPngBytes = pngBytes; // Guarda cotas y pines unificados (Req. 7)
       debugPrint(
         'Imagen con pines capturada: ${image.width} x ${image.height} (${(pngBytes.lengthInBytes / 1024).toStringAsFixed(1)} KB)',
       );
@@ -2444,7 +2614,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
               ),
               const SizedBox(height: 12),
               const Text(
-                'Nombre de Área / Sector (Opcional):',
+                'Nombre del Ambiente / Sector (Cada foto es un ambiente):',
                 style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
               ),
               const SizedBox(height: 6),
@@ -2458,6 +2628,13 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                   hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
                   filled: true,
                   fillColor: const Color(0xFF0F172A),
+                  prefixIcon: const Icon(Icons.meeting_room_outlined, color: Color(0xFF38BDF8), size: 18),
+                  suffixIcon: VoiceInputButton(
+                    controller: areaController,
+                    voiceService: _voiceService,
+                    tooltip: 'Dictar ambiente por voz',
+                    iconSize: 18,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
                     borderSide: BorderSide.none,
@@ -2564,14 +2741,19 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
       final String localFilePath = localFile.path;
       debugPrint('Imagen guardada localmente en: $localFilePath');
 
-      // Guardar también la imagen exclusiva con cotas/medidas si existe
-      if (measurementsPngBytes != null) {
-        final String medidasFileName =
-            localFileName.replaceAll('.png', '_medidas.png');
-        final File medidasFile =
-            File('${designatedFolder.path}/$medidasFileName');
-        await medidasFile.writeAsBytes(measurementsPngBytes);
-        debugPrint('Imagen de cotas/medidas guardada en: ${medidasFile.path}');
+      // Guardar también la imagen de cotas y pines técnicos
+      final String medidasFileName =
+          localFileName.replaceAll('.png', '_medidas.png');
+      final File medidasFile =
+          File('${designatedFolder.path}/$medidasFileName');
+      await medidasFile.writeAsBytes(measurementsPngBytes);
+      debugPrint('Imagen de cotas/medidas guardada en: ${medidasFile.path}');
+
+      // Guardar también la foto base limpia sin stickers/cotas para poder re-editar sin duplicar trazos
+      if (_capturedImageBytes != null) {
+        final String rawFileName = localFileName.replaceAll('.png', '_raw.jpg');
+        final File rawFile = File('${designatedFolder.path}/$rawFileName');
+        await rawFile.writeAsBytes(_capturedImageBytes!);
       }
 
       // 4. Extraer etiquetas colocadas
@@ -2603,24 +2785,31 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
       final List<String> deducedAccesorios =
           TechnicalCatalogMatrix.deduceAccesorios(materiales: materialesTags);
 
-      // Registrar evidencia en la sesión consolidada (VISTEC V3)
-      _sessionModel.addPhoto(
-        SessionEvidenceRecord(
-          photoNumber: _sessionPhotoNumber,
-          areaSector: finalAreaSector,
-          localImagePath: localFilePath,
-          pngBytes: pngBytes,
-          clientPngBytes: clientPngBytes,
-          measurementsPngBytes: measurementsPngBytes,
-          linearMeasurements: List<LinearMeasurement>.from(_linearMeasurements),
-          estructuras: estructurasTags,
-          materiales: materialesTags,
-          peligros: peligrosTags,
-          herramientas: deducedHerramientas,
-          accesorios: deducedAccesorios,
-          timestamp: DateTime.now(),
-        ),
+      // Registrar o actualizar evidencia en la sesión consolidada (VISTEC V3)
+      final newRecord = SessionEvidenceRecord(
+        photoNumber: _editingSessionPhotoIndex != null
+            ? _sessionModel.photos[_editingSessionPhotoIndex!].photoNumber
+            : _sessionPhotoNumber,
+        areaSector: finalAreaSector,
+        localImagePath: localFilePath,
+        pngBytes: pngBytes,
+        clientPngBytes: clientPngBytes,
+        measurementsPngBytes: measurementsPngBytes,
+        linearMeasurements: List<LinearMeasurement>.from(_linearMeasurements),
+        placedPins: List<PlacedSticker>.from(_placedStickers),
+        estructuras: estructurasTags,
+        materiales: materialesTags,
+        peligros: peligrosTags,
+        herramientas: deducedHerramientas,
+        accesorios: deducedAccesorios,
+        timestamp: DateTime.now(),
       );
+
+      if (_editingSessionPhotoIndex != null) {
+        _sessionModel.updatePhoto(_editingSessionPhotoIndex!, newRecord);
+      } else {
+        _sessionModel.addPhoto(newRecord);
+      }
 
       // Persistir inmediatamente la sesión completa en almacenamiento local del dispositivo
       await ProjectStorageService.saveSession(_sessionModel);
@@ -2721,15 +2910,30 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
             actions: [
               OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFFF59E0B),
+                  side: const BorderSide(color: Color(0xFFF59E0B)),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 12,
+                  ),
+                ),
+                icon: const Icon(Icons.fact_check_outlined, size: 16),
+                label: const Text('Validar SST'),
+                onPressed: () {
+                  _openManagerValidationSheet();
+                },
+              ),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
                   foregroundColor: const Color(0xFF10B981),
                   side: const BorderSide(color: Color(0xFF10B981)),
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
+                    horizontal: 12,
                     vertical: 12,
                   ),
                 ),
                 icon: const Icon(Icons.flag, size: 18),
-                label: const Text('🏁 Finalizar Proyecto'),
+                label: const Text('🏁 Finalizar'),
                 onPressed: () async {
                   Navigator.pop(ctx);
                   await Navigator.push(
@@ -2879,6 +3083,29 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 4),
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFF59E0B),
+                foregroundColor: const Color(0xFF0F172A),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                elevation: 0,
+              ),
+              icon: const Icon(Icons.fact_check_outlined, size: 16),
+              label: Text(
+                (_sessionModel.excludedTools.length +
+                            _sessionModel.excludedMaterials.length +
+                            _sessionModel.excludedAccessories.length) >
+                        0
+                    ? 'Validar (${_sessionModel.excludedTools.length + _sessionModel.excludedMaterials.length + _sessionModel.excludedAccessories.length})'
+                    : 'Validar SST',
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+              ),
+              onPressed: _openManagerValidationSheet,
+            ),
+          ),
           if (_sessionModel.totalPhotos > 0) ...[
             IconButton(
               icon: const Icon(
@@ -2919,10 +3146,28 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
             onPressed: _pickFromGallery,
           ),
           if (_capturedImageBytes != null) ...[
-            IconButton(
-              icon: const Icon(Icons.bolt, color: Color(0xFFE3A51A), size: 22),
-              tooltip: 'Auditor SSOMA con IA (⚡)',
-              onPressed: _openSsomaAiWizard,
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 9.0, horizontal: 2.0),
+              child: ElevatedButton(
+                onPressed: _openSsomaAiWizard,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFE3A51A),
+                  foregroundColor: const Color(0xFF001F2F),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                  visualDensity: VisualDensity.compact,
+                  elevation: 2,
+                ),
+                child: const Text(
+                  'SSOMA IA',
+                  style: TextStyle(
+                    color: Color(0xFF001F2F),
+                    fontWeight: FontWeight.w900,
+                    fontSize: 11,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ),
             ),
             IconButton(
               icon: const Icon(Icons.handyman_outlined, color: Color(0xFF4ADE80), size: 20),
@@ -2977,9 +3222,205 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
           ],
         ],
       ),
-      body: _capturedImageBytes == null
-          ? _buildCameraView()
-          : _buildStickerEditorView(),
+      body: Column(
+        children: [
+          if (_sessionModel.photos.isNotEmpty)
+            _buildSessionPhotosFilmstrip(),
+          Expanded(
+            child: _capturedImageBytes == null
+                ? _buildCameraView()
+                : _buildStickerEditorView(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSessionPhotosFilmstrip() {
+    return Container(
+      height: 60,
+      width: double.infinity,
+      color: const Color(0xFF1E293B),
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        children: [
+          // Botón rápida captura: Nueva foto con cámara
+          InkWell(
+            onTap: _startNewSessionPhoto,
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: _editingSessionPhotoIndex == null && _capturedImageBytes == null
+                    ? const Color(0xFF38BDF8)
+                    : const Color(0xFF0F172A),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: const Color(0xFF38BDF8),
+                  width: 1.2,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.camera_alt,
+                    size: 15,
+                    color: _editingSessionPhotoIndex == null && _capturedImageBytes == null
+                        ? const Color(0xFF001F2F)
+                        : const Color(0xFF38BDF8),
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    '+ Cámara',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: _editingSessionPhotoIndex == null && _capturedImageBytes == null
+                          ? const Color(0xFF001F2F)
+                          : Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+
+          // Botón incorporar imagen desde galería
+          InkWell(
+            onTap: () async {
+              _startNewSessionPhoto();
+              await _pickFromGallery();
+            },
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F172A),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: const Color(0xFFE3A51A),
+                  width: 1.2,
+                ),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.add_photo_alternate, size: 15, color: Color(0xFFE3A51A)),
+                  SizedBox(width: 5),
+                  Text(
+                    '+ Galería',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+
+          // Botón directo: Validación del Gestor de Proyectos (Herramientas, Materiales y SST)
+          InkWell(
+            onTap: _openManagerValidationSheet,
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F172A),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: const Color(0xFFF59E0B),
+                  width: 1.2,
+                ),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.fact_check_outlined, size: 15, color: Color(0xFFF59E0B)),
+                  const SizedBox(width: 5),
+                  Text(
+                    (_sessionModel.excludedTools.length +
+                                _sessionModel.excludedMaterials.length +
+                                _sessionModel.excludedAccessories.length) >
+                            0
+                        ? 'Validar (${_sessionModel.excludedTools.length + _sessionModel.excludedMaterials.length + _sessionModel.excludedAccessories.length})'
+                        : 'Validar SST / Recursos',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFFF59E0B),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          const VerticalDivider(color: Colors.white24, width: 1, indent: 6, endIndent: 6),
+          const SizedBox(width: 10),
+
+          // Lista de fotos guardadas en la sesión para alternar y gestionar
+          for (int i = 0; i < _sessionModel.photos.length; i++) ...[
+            Builder(
+              builder: (context) {
+                final photo = _sessionModel.photos[i];
+                final bool isSelected = _editingSessionPhotoIndex == i;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8.0),
+                  child: InkWell(
+                    onTap: () => _loadSessionPhotoForEditing(i),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? const Color(0xFF10B981).withValues(alpha: 0.25)
+                            : const Color(0xFF0F172A),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: isSelected ? const Color(0xFF10B981) : const Color(0xFF334155),
+                          width: isSelected ? 1.8 : 1.0,
+                        ),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                isSelected ? Icons.edit : Icons.photo,
+                                size: 12,
+                                color: isSelected ? const Color(0xFF10B981) : const Color(0xFF94A3B8),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Foto #${photo.photoNumber}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                                  color: isSelected ? const Color(0xFF10B981) : Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            photo.areaSector.isNotEmpty ? photo.areaSector : 'Sin sector',
+                            style: const TextStyle(fontSize: 9, color: Color(0xFF94A3B8)),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -3281,95 +3722,27 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                                     fit: BoxFit.fill,
                                   ),
 
-                                  // Marca de agua técnica ultra-compacta (mínima altura y fuentes pequeñas)
+                                  // Ficha técnica ultra-compacta dentro de la foto (Req. 1: Sistema, Cliente, Ambiente, Fecha/hora, Fedor Corzano - sin GPS)
                                   Positioned(
                                     top: 6,
                                     left: 6,
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 5,
-                                        vertical: 2.5,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.black.withValues(
-                                          alpha: 0.75,
-                                        ),
-                                        borderRadius: BorderRadius.circular(4),
-                                        border: Border.all(
-                                          color: const Color(0xFF38BDF8)
-                                              .withValues(alpha: 0.7),
-                                          width: 0.6,
-                                        ),
-                                      ),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              const Icon(
-                                                Icons.verified,
-                                                color: Color(0xFF38BDF8),
-                                                size: 8,
-                                              ),
-                                              const SizedBox(width: 3),
-                                              Text(
-                                                'VISTE • ${widget.project.proyecto.toUpperCase()} • FOTO #$_sessionPhotoNumber',
-                                                style: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 7.5,
-                                                  fontWeight: FontWeight.bold,
-                                                  height: 1.0,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 1),
-                                          Text(
-                                            '${widget.project.contacto} | ${widget.project.fecha}',
-                                            style: const TextStyle(
-                                              color: Colors.white70,
-                                              fontSize: 6.5,
-                                              height: 1.0,
-                                            ),
-                                          ),
-                                          if (widget.project.mapa.isNotEmpty &&
-                                              widget.project.mapa !=
-                                                  '0.0, 0.0') ...[
-                                            const SizedBox(height: 0.5),
-                                            Text(
-                                              'GPS: ${widget.project.mapa}',
-                                              style: const TextStyle(
-                                                color: Color(0xFF38BDF8),
-                                                fontSize: 6.5,
-                                                fontWeight: FontWeight.w500,
-                                                height: 1.0,
-                                              ),
-                                            ),
-                                          ],
-                                        ],
-                                      ),
+                                    child: CompactPhotoInfoBadge(
+                                      proyecto: widget.project.proyecto,
+                                      contacto: widget.project.contacto,
+                                      ambiente: (_editingSessionPhotoIndex != null &&
+                                              _editingSessionPhotoIndex! < _sessionModel.photos.length &&
+                                              _sessionModel.photos[_editingSessionPhotoIndex!].areaSector.isNotEmpty)
+                                          ? _sessionModel.photos[_editingSessionPhotoIndex!].areaSector
+                                          : (widget.project.areaSector.isNotEmpty
+                                              ? widget.project.areaSector
+                                              : 'Ambiente #$_sessionPhotoNumber'),
+                                      fecha: widget.project.fecha,
+                                      photoNumber: _sessionPhotoNumber,
                                     ),
                                   ),
 
-                                  // 1. MODO PINES (Visibles únicamente en modo Pines)
-                                  if (_overlayMode == OverlayDisplayMode.pines) ...[
-                                    for (int i = 0; i < _placedStickers.length; i++)
-                                      _buildNumberedPin(_placedStickers[i], i),
-
-                                    if (_placedStickers.isNotEmpty)
-                                      Positioned(
-                                        bottom: 5,
-                                        left: 5,
-                                        right: 5,
-                                        child: _buildInPhotoTranslucentLegend(),
-                                      ),
-                                  ],
-
-                                  // 2. MODO MEDIDAS (ÚNICAMENTE trazos técnicos y cotas con flechas de 2 puntas)
-                                  if (_overlayMode == OverlayDisplayMode.medidas)
+                                  // 1. Capa de Cotas Técnicas (dimensiones con cotas y flechas - Req. 7: siempre presentes)
+                                  if (_linearMeasurements.isNotEmpty || _cotaDragStart != null || _guidedOriginA != null)
                                     CustomPaint(
                                       painter: MeasurementLinesPainter(
                                         measurements: _linearMeasurements,
@@ -3378,12 +3751,23 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                                         currentEnd: _cotaDragCurrent ?? _guidedTargetB,
                                         guidedOriginA: _guidedOriginA,
                                         activeMaterial:
-                                            _getContextualConduitMaterials()
-                                                    .isNotEmpty
-                                                ? _getContextualConduitMaterials()
-                                                    .first
+                                            _getContextualConduitMaterials().isNotEmpty
+                                                ? _getContextualConduitMaterials().first
                                                 : null,
                                       ),
+                                    ),
+
+                                  // 2. Capa de Pines Numerados (siempre presentes en la foto - Req. 7)
+                                  for (int i = 0; i < _placedStickers.length; i++)
+                                    _buildNumberedPin(_placedStickers[i], i),
+
+                                  // LEYENDA TRANSLÚCIDA (Visible tanto en Pines como en Medidas si hay elementos)
+                                  if (_placedStickers.isNotEmpty || _linearMeasurements.isNotEmpty)
+                                    Positioned(
+                                      bottom: 5,
+                                      left: 5,
+                                      right: 5,
+                                      child: _buildInPhotoTranslucentLegend(),
                                     ),
                                 ],
                               ),
@@ -3592,6 +3976,8 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                                                 end: end,
                                                 contextualConduits: _getContextualConduitMaterials(),
                                                 voiceService: _voiceService,
+                                                clasificacion: widget.project.clasificacion,
+                                                allAvailableMaterials: _catalogs['materiales'],
                                               ),
                                             );
                                             if (result != null && result.action == MeasurementModalAction.saved && result.measurement != null) {
@@ -4240,6 +4626,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
   }
 
   Widget _buildNumberedPin(PlacedSticker placed, int index) {
+    final int categoryNumber = _getCategoryPinNumber(placed);
     // Zona táctil invisible de 36x36 px para tocar y arrastrar con máxima soltura sobre la pantalla táctil
     return Positioned(
       left: placed.position.dx - 18,
@@ -4263,13 +4650,14 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
           alignment: Alignment.center,
           color:
               Colors.transparent, // Zona táctil de comodidad sin bordes rígidos
-          child: _buildPinBadge(placed.sticker.category, index + 1),
+          child: _buildPinBadge(placed.sticker.category, categoryNumber),
         ),
       ),
     );
   }
 
   void _showPinOptionsModal(PlacedSticker placed, int index) {
+    final int categoryNumber = _getCategoryPinNumber(placed);
     final Color categoryColor = _getCategoryColor(placed.sticker.category);
     final String categoryName =
         placed.sticker.category == StickerCategory.estructuras
@@ -4306,14 +4694,14 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
               ),
               Row(
                 children: [
-                  _buildModalPinBadge(placed.sticker.category, index + 1),
+                  _buildModalPinBadge(placed.sticker.category, categoryNumber),
                   const SizedBox(width: 14),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Pin #${index + 1} • $categoryName',
+                          '$categoryName #$categoryNumber',
                           style: TextStyle(
                             color: categoryColor,
                             fontSize: 13,
@@ -4340,7 +4728,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                 onPressed: () {
                   Navigator.pop(ctx);
                   _openStickerSelector(
-                    title: 'Cambiar elemento para el Pin #${index + 1}',
+                    title: 'Cambiar elemento para $categoryName #$categoryNumber',
                     existingPin: placed,
                   );
                 },
@@ -4368,7 +4756,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                   });
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('Pin #${index + 1} eliminado.'),
+                      content: Text('$categoryName #$categoryNumber eliminado.'),
                       duration: const Duration(seconds: 1),
                       backgroundColor: Colors.redAccent,
                     ),
@@ -4404,6 +4792,10 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
   /// Panel de Leyenda Ultra-Compacta y Translúcida dentro de la foto
   /// Diseñada con mínima altura, separación reducida y fondo al 48% para no obstruir las estructuras
   Widget _buildInPhotoTranslucentLegend() {
+    if (_placedStickers.isEmpty && _linearMeasurements.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
     final List<MapEntry<int, PlacedSticker>> sstPins = [];
     final List<MapEntry<int, PlacedSticker>> matPins = [];
     final List<MapEntry<int, PlacedSticker>> structPins = [];
@@ -4444,7 +4836,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
               ),
               const SizedBox(width: 3),
               Text(
-                'PINES RELEVADOS (${_placedStickers.length})',
+                'PINES Y COTAS (${_placedStickers.length + _linearMeasurements.length})',
                 style: const TextStyle(
                   color: Color(0xFF38BDF8),
                   fontSize: 7.0,
@@ -4493,8 +4885,70 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
               pins: structPins,
             ),
           ],
+
+          // 4. Medidas / Cotas (Flechas de ingeniería [1], [2]...)
+          if (_linearMeasurements.isNotEmpty) ...[
+            if (sstPins.isNotEmpty || matPins.isNotEmpty || structPins.isNotEmpty)
+              const SizedBox(height: 1.2),
+            _buildInPhotoMeasurementsLegendRow(),
+          ],
         ],
       ),
+    );
+  }
+
+  Widget _buildInPhotoMeasurementsLegendRow() {
+    return Wrap(
+      spacing: 6,
+      runSpacing: 1.5,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        for (int i = 0; i < _linearMeasurements.length; i++) ...[
+          Builder(
+            builder: (context) {
+              final m = _linearMeasurements[i];
+              return InkWell(
+                onTap: () => _openEditMeasurementModal(m),
+                borderRadius: BorderRadius.circular(3),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2.5, vertical: 1.0),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE3A51A),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                        child: Text(
+                          '[${i + 1}]',
+                          style: const TextStyle(
+                            color: Color(0xFF001F2F),
+                            fontWeight: FontWeight.w900,
+                            fontSize: 6.0,
+                            height: 1.0,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 3.5),
+                      Text(
+                        '${m.labelDistanceOnly} • ${m.material}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 7.5,
+                          fontWeight: FontWeight.w600,
+                          height: 1.0,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ],
     );
   }
 
@@ -4509,6 +4963,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
       children: pins.map((entry) {
         final int index = entry.key;
         final PlacedSticker placed = entry.value;
+        final int categoryNumber = _getCategoryPinNumber(placed);
         return InkWell(
           onTap: () => _showPinOptionsModal(placed, index),
           borderRadius: BorderRadius.circular(3),
@@ -4517,7 +4972,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _buildMiniLegendBadge(placed.sticker.category, index + 1),
+                _buildMiniLegendBadge(placed.sticker.category, categoryNumber),
                 const SizedBox(width: 3.5),
                 Text(
                   placed.sticker.title,

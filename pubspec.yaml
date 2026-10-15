@@ -46,6 +46,8 @@ dependencies:
   image: ^4.10.1
   url_launcher: ^6.3.2
   speech_to_text: ^7.5.0
+  flutter_map: ^8.3.2
+  latlong2: ^0.10.1
 
 dev_dependencies:
   flutter_test:

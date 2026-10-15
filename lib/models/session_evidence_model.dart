@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'linear_measurement_model.dart';
 import 'project_model.dart';
+import 'sticker_model.dart';
 
 /// Representa la frecuencia y criticidad de un ítem (herramienta o material) en el proyecto
 class ItemFrequency {
@@ -45,14 +46,18 @@ class SessionEvidenceRecord {
   final String areaSector;
   final String localImagePath;
   final Uint8List pngBytes; // Versión completa con todos los pines para Gestor de Proyectos
+  final Uint8List? cleanPngBytes; // Imagen limpia original sin marcas, pines ni cotas horneadas
   final Uint8List? clientPngBytes; // Versión exclusiva para el Cliente (SOLO marcadores de seguridad SST)
   final Uint8List? measurementsPngBytes; // Versión exclusiva con Cotas y Medidas (pines ocultos)
   final List<LinearMeasurement> linearMeasurements; // Cotas y medidas lineales estructuradas
+  final List<PlacedSticker> placedPins; // Pines interactivos colocados en la foto
   final List<String> estructuras;
   final List<String> materiales;
   final List<String> peligros;
   final List<String> herramientas;
   final List<String> accesorios;
+  final Map<String, String> photoHierarchyResponsibility;
+  final Map<String, String> photoHierarchyControls;
   final DateTime timestamp;
 
   const SessionEvidenceRecord({
@@ -60,22 +65,103 @@ class SessionEvidenceRecord {
     required this.areaSector,
     required this.localImagePath,
     required this.pngBytes,
+    this.cleanPngBytes,
     this.clientPngBytes,
     this.measurementsPngBytes,
     this.linearMeasurements = const [],
+    this.placedPins = const [],
     required this.estructuras,
     required this.materiales,
     required this.peligros,
     required this.herramientas,
     required this.accesorios,
+    this.photoHierarchyResponsibility = const {},
+    this.photoHierarchyControls = const {},
     required this.timestamp,
   });
+
+  /// Retorna la imagen base limpia original para el lienzo interactivo del editor
+  Uint8List get baseImageBytes {
+    if (cleanPngBytes != null && cleanPngBytes!.isNotEmpty) {
+      return cleanPngBytes!;
+    }
+    if (localImagePath.isNotEmpty) {
+      final f = File(localImagePath);
+      if (f.existsSync()) {
+        try {
+          final b = f.readAsBytesSync();
+          if (b.isNotEmpty) return b;
+        } catch (_) {}
+      }
+    }
+    return pngBytes;
+  }
 
   /// Retorna la imagen adecuada para el cliente (con solo marcadores SST) o fallback a la completa
   Uint8List get clientImageBytes => clientPngBytes ?? pngBytes;
 
   /// Retorna la imagen con cotas o null si no tiene medidas
   Uint8List? get measurementsImageBytes => measurementsPngBytes;
+
+  /// Retorna la entidad responsable de un nivel de control ('VIGILARTE' o 'CLIENTE')
+  String getResponsibility(String levelKey) {
+    final lower = levelKey.toLowerCase().trim();
+    if (photoHierarchyResponsibility.containsKey(lower)) {
+      return photoHierarchyResponsibility[lower]!;
+    }
+    if (lower.contains('eliminac') || lower.contains('sustituc')) {
+      return 'CLIENTE';
+    }
+    return 'VIGILARTE';
+  }
+
+  /// Retorna la descripción o acción específica para un nivel de control
+  String getControlDescription(String levelKey) {
+    final lower = levelKey.toLowerCase().trim();
+    return photoHierarchyControls[lower] ?? '';
+  }
+
+  SessionEvidenceRecord copyWith({
+    int? photoNumber,
+    String? areaSector,
+    String? localImagePath,
+    Uint8List? pngBytes,
+    Uint8List? cleanPngBytes,
+    Uint8List? clientPngBytes,
+    Uint8List? measurementsPngBytes,
+    List<LinearMeasurement>? linearMeasurements,
+    List<PlacedSticker>? placedPins,
+    List<String>? estructuras,
+    List<String>? materiales,
+    List<String>? peligros,
+    List<String>? herramientas,
+    List<String>? accesorios,
+    Map<String, String>? photoHierarchyResponsibility,
+    Map<String, String>? photoHierarchyControls,
+    DateTime? timestamp,
+  }) {
+    return SessionEvidenceRecord(
+      photoNumber: photoNumber ?? this.photoNumber,
+      areaSector: areaSector ?? this.areaSector,
+      localImagePath: localImagePath ?? this.localImagePath,
+      pngBytes: pngBytes ?? this.pngBytes,
+      cleanPngBytes: cleanPngBytes ?? this.cleanPngBytes,
+      clientPngBytes: clientPngBytes ?? this.clientPngBytes,
+      measurementsPngBytes: measurementsPngBytes ?? this.measurementsPngBytes,
+      linearMeasurements: linearMeasurements ?? this.linearMeasurements,
+      placedPins: placedPins ?? this.placedPins,
+      estructuras: estructuras ?? this.estructuras,
+      materiales: materiales ?? this.materiales,
+      peligros: peligros ?? this.peligros,
+      herramientas: herramientas ?? this.herramientas,
+      accesorios: accesorios ?? this.accesorios,
+      photoHierarchyResponsibility:
+          photoHierarchyResponsibility ?? this.photoHierarchyResponsibility,
+      photoHierarchyControls:
+          photoHierarchyControls ?? this.photoHierarchyControls,
+      timestamp: timestamp ?? this.timestamp,
+    );
+  }
 
   Map<String, dynamic> toJson() {
     return {
@@ -87,7 +173,10 @@ class SessionEvidenceRecord {
       'peligros': peligros,
       'herramientas': herramientas,
       'accesorios': accesorios,
+      'photoHierarchyResponsibility': photoHierarchyResponsibility,
+      'photoHierarchyControls': photoHierarchyControls,
       'linearMeasurements': linearMeasurements.map((m) => m.toJson()).toList(),
+      'placedPins': placedPins.map((p) => p.toJson()).toList(),
       'timestamp': timestamp.toIso8601String(),
     };
   }
@@ -126,6 +215,17 @@ class SessionEvidenceRecord {
         .map((m) => LinearMeasurement.fromJson(m as Map<String, dynamic>))
         .toList();
 
+    final rawPins = json['placedPins'] as List<dynamic>? ?? [];
+    final parsedPins = rawPins
+        .map((p) => PlacedSticker.fromJson(p as Map<String, dynamic>))
+        .toList();
+
+    final rawResp = json['photoHierarchyResponsibility'] as Map<String, dynamic>? ?? {};
+    final Map<String, String> photoResp = rawResp.map((k, v) => MapEntry(k.toString(), v.toString()));
+
+    final rawControls = json['photoHierarchyControls'] as Map<String, dynamic>? ?? {};
+    final Map<String, String> photoControls = rawControls.map((k, v) => MapEntry(k.toString(), v.toString()));
+
     return SessionEvidenceRecord(
       photoNumber: json['photoNumber'] as int? ?? 1,
       areaSector: json['areaSector'] as String? ?? '',
@@ -134,11 +234,14 @@ class SessionEvidenceRecord {
       clientPngBytes: loadedClientBytes,
       measurementsPngBytes: loadedMeasurementsBytes,
       linearMeasurements: parsedMeasurements,
+      placedPins: parsedPins,
       estructuras: (json['estructuras'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
       materiales: (json['materiales'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
       peligros: (json['peligros'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
       herramientas: (json['herramientas'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
       accesorios: (json['accesorios'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
+      photoHierarchyResponsibility: photoResp,
+      photoHierarchyControls: photoControls,
       timestamp: json['timestamp'] != null
           ? DateTime.tryParse(json['timestamp'] as String) ?? DateTime.now()
           : DateTime.now(),
@@ -173,6 +276,42 @@ class ProjectSessionModel {
   /// Agrega una evidencia fotográfica a la sesión
   void addPhoto(SessionEvidenceRecord record) {
     photos.add(record);
+  }
+
+  /// Actualiza o reemplaza una evidencia fotográfica en la sesión
+  void updatePhoto(int index, SessionEvidenceRecord record) {
+    if (index >= 0 && index < photos.length) {
+      photos[index] = record;
+    }
+  }
+
+  /// Actualiza la asignación de jerarquía SST de una fotografía específica
+  void setPhotoHierarchy(int photoIndex, {
+    required Map<String, String> responsibilities,
+    required Map<String, String> controls,
+  }) {
+    if (photoIndex >= 0 && photoIndex < photos.length) {
+      photos[photoIndex] = photos[photoIndex].copyWith(
+        photoHierarchyResponsibility: Map<String, String>.from(responsibilities),
+        photoHierarchyControls: Map<String, String>.from(controls),
+      );
+    }
+  }
+
+  /// Calcula el consolidado de canalizaciones con cálculo de tiras/tubos comerciales (3.00 m c/u)
+  List<Map<String, dynamic>> getConduitCalculation() {
+    final totals = getConsolidatedLinearMeters();
+    return totals.entries.map((e) {
+      final meters = e.value;
+      const commercialLength = 3.0;
+      final piecesNeeded = (meters / commercialLength).ceil();
+      return {
+        'material': e.key,
+        'meters': meters,
+        'standardLength': commercialLength,
+        'pieces': piecesNeeded,
+      };
+    }).toList();
   }
 
   /// Obtiene el responsable de la jerarquía respetando la personalización del Gestor
@@ -372,7 +511,12 @@ class ProjectSessionModel {
     final Map<String, double> totals = {};
     for (final photo in photos) {
       for (final m in photo.linearMeasurements) {
-        totals[m.material] = (totals[m.material] ?? 0.0) + m.longitudMetros;
+        if (!m.esMetradoMaterial && (m.material == 'Solo Medida' || m.material == 'Por definir' || m.material.isEmpty)) {
+          continue;
+        }
+        if (m.material != 'Solo Medida' && m.material != 'Por definir' && m.material.isNotEmpty) {
+          totals[m.material] = (totals[m.material] ?? 0.0) + m.longitudMetros;
+        }
       }
     }
     return totals;

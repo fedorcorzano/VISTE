@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../models/linear_measurement_model.dart';
+import '../models/sticker_model.dart';
 import '../services/voice_recognition_service.dart';
 
 /// Painter de ingeniería técnica que dibuja cotas con flechas de dos puntas (<------>),
@@ -33,7 +34,7 @@ class MeasurementLinesPainter extends CustomPainter {
         canvas: canvas,
         start: m.startOffset,
         end: m.endOffset,
-        label: '#${i + 1} • ${m.labelFormatted}',
+        label: m.labelDistanceOnly,
         isTemp: false,
         isSelected: isSelected,
       );
@@ -138,22 +139,22 @@ class MeasurementLinesPainter extends CustomPainter {
     // 1. Sombra posterior oscura para máximo contraste sobre fotos claras o reflectivas
     final Paint shadowLine = Paint()
       ..color = Colors.black.withValues(alpha: 0.85)
-      ..strokeWidth = (isSelected ? 3.4 : 2.6) + 1.8
+      ..strokeWidth = isSelected ? 2.6 : 2.0
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
     canvas.drawLine(start, end, shadowLine);
 
-    // 2. Línea principal de cota
+    // 2. Línea principal de cota (esbelta y delgada para máxima precisión técnica)
     final Paint linePaint = Paint()
       ..color = strokeColor
-      ..strokeWidth = isSelected ? 3.0 : 2.4
+      ..strokeWidth = isSelected ? 1.8 : 1.3
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
     canvas.drawLine(start, end, linePaint);
 
     // 3. Flechas de dos puntas de ingeniería (<--------->)
-    const double arrowLen = 13.5;
-    const double arrowHalfWidth = 5.2;
+    const double arrowLen = 9.5;
+    const double arrowHalfWidth = 3.6;
 
     final Paint arrowPaint = Paint()
       ..color = strokeColor
@@ -161,7 +162,7 @@ class MeasurementLinesPainter extends CustomPainter {
     final Paint arrowBorder = Paint()
       ..color = Colors.black.withValues(alpha: 0.9)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0;
+      ..strokeWidth = 0.8;
 
     // Flecha Punta A (Origen: apunta exactamente al contacto del punto start)
     final Path startArrow = Path()
@@ -208,12 +209,12 @@ class MeasurementLinesPainter extends CustomPainter {
     final Paint centerDotBorder = Paint()
       ..color = Colors.black
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2;
+      ..strokeWidth = 1.0;
 
-    canvas.drawCircle(start, 2.5, centerDotPaint);
-    canvas.drawCircle(start, 2.5, centerDotBorder);
-    canvas.drawCircle(end, 2.5, centerDotPaint);
-    canvas.drawCircle(end, 2.5, centerDotBorder);
+    canvas.drawCircle(start, 1.8, centerDotPaint);
+    canvas.drawCircle(start, 1.8, centerDotBorder);
+    canvas.drawCircle(end, 1.8, centerDotPaint);
+    canvas.drawCircle(end, 1.8, centerDotBorder);
 
     // 5. Manijas táctiles de ajuste si la cota está seleccionada para centrado
     if (isSelected && !isTemp) {
@@ -228,9 +229,9 @@ class MeasurementLinesPainter extends CustomPainter {
       text: label,
       style: TextStyle(
         color: isSelected ? const Color(0xFF001F2F) : Colors.white,
-        fontSize: 10,
+        fontSize: 9,
         fontWeight: FontWeight.bold,
-        letterSpacing: 0.2,
+        letterSpacing: 0.1,
       ),
     );
     final TextPainter tp = TextPainter(
@@ -240,15 +241,15 @@ class MeasurementLinesPainter extends CustomPainter {
     );
     tp.layout();
 
-    final double padH = 7.0;
-    final double padV = 4.0;
+    final double padH = 5.0;
+    final double padV = 2.5;
     final Rect bgRect = Rect.fromCenter(
       center: mid,
       width: tp.width + padH * 2,
       height: tp.height + padV * 2,
     );
 
-    final RRect rrect = RRect.fromRectAndRadius(bgRect, const Radius.circular(6));
+    final RRect rrect = RRect.fromRectAndRadius(bgRect, const Radius.circular(4));
     final Paint badgeBgPaint = Paint()
       ..color = isSelected ? strokeColor : bgColor;
     final Paint badgeBorderPaint = Paint()
@@ -268,12 +269,29 @@ class MeasurementLinesPainter extends CustomPainter {
     required String label,
     required Color color,
   }) {
-    // Micro-indicador técnico de manija de ajuste (cápsula compacta, sin círculos grandes ni halos de lupa)
+    // 1. Halo y anillo táctil interactivo para agarre y ajuste de posición milimétrico
+    final Paint touchHalo = Paint()
+      ..color = color.withValues(alpha: 0.28)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(center, 13, touchHalo);
+
+    final Paint borderRing = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
+    canvas.drawCircle(center, 13, borderRing);
+
+    final Paint centerDot = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(center, 3.5, centerDot);
+
+    // 2. Micro-indicador técnico de manija con etiqueta ('A' Origen, 'B' Destino)
     final TextSpan span = TextSpan(
       text: label,
       style: const TextStyle(
         color: Color(0xFF001F2F),
-        fontSize: 9.0,
+        fontSize: 9.5,
         fontWeight: FontWeight.w900,
       ),
     );
@@ -284,10 +302,10 @@ class MeasurementLinesPainter extends CustomPainter {
     );
     tp.layout();
 
-    final Offset badgeCenter = Offset(center.dx, center.dy - 16);
+    final Offset badgeCenter = Offset(center.dx, center.dy - 19);
     final Rect badgeRect = Rect.fromCenter(
       center: badgeCenter,
-      width: tp.width + 8,
+      width: tp.width + 10,
       height: tp.height + 4,
     );
     final RRect rrect = RRect.fromRectAndRadius(badgeRect, const Radius.circular(4));
@@ -418,6 +436,9 @@ class MeasurementCaptureModal extends StatefulWidget {
   final List<String> contextualConduits;
   final VoiceRecognitionService voiceService;
   final LinearMeasurement? existingMeasurement; // Para editar cota existente
+  final String clasificacion;
+  final List<String>? allAvailableMaterials;
+  final bool onlyDistance; // Si es true (en campo), solo pide distancia sin material
 
   const MeasurementCaptureModal({
     super.key,
@@ -426,6 +447,9 @@ class MeasurementCaptureModal extends StatefulWidget {
     required this.contextualConduits,
     required this.voiceService,
     this.existingMeasurement,
+    this.clasificacion = 'Comercial',
+    this.allAvailableMaterials,
+    this.onlyDistance = false,
   });
 
   @override
@@ -435,6 +459,8 @@ class MeasurementCaptureModal extends StatefulWidget {
 class _MeasurementCaptureModalState extends State<MeasurementCaptureModal> {
   final TextEditingController _distanceController = TextEditingController();
   late String _selectedMaterial;
+  late String _selectedFamily;
+  late bool _esMetrado;
   bool _isListening = false;
   String _recognizedVoice = '';
 
@@ -446,12 +472,28 @@ class _MeasurementCaptureModalState extends State<MeasurementCaptureModal> {
       _distanceController.text = m.longitudMetros % 1 == 0
           ? m.longitudMetros.toInt().toString()
           : m.longitudMetros.toStringAsFixed(2);
-      _selectedMaterial = m.material;
+      _selectedMaterial = m.material.isNotEmpty ? m.material : 'Solo Medida';
+      _esMetrado = m.esMetradoMaterial;
     } else {
-      _selectedMaterial = widget.contextualConduits.isNotEmpty
-          ? widget.contextualConduits.first
-          : 'Tubo EMT 3/4"';
+      _esMetrado = false;
+      if (widget.contextualConduits.isNotEmpty) {
+        _selectedMaterial = widget.contextualConduits.first;
+      } else {
+        // Sugerir según clasificación de proyecto
+        final priority = TechnicalCatalogMatrix.materialesPorClasificacion[widget.clasificacion];
+        if (priority != null && priority.isNotEmpty) {
+          final fam = TechnicalCatalogMatrix.deduceFamilia(priority.first);
+          final variants = TechnicalCatalogMatrix.familiasYVariantesCanalizacion[fam];
+          _selectedMaterial = (variants != null && variants.isNotEmpty) ? variants[1] : 'Tubo EMT 3/4"';
+        } else {
+          _selectedMaterial = 'Tubo EMT 3/4"';
+        }
+      }
     }
+
+    _selectedFamily = (_selectedMaterial == 'Por definir' || _selectedMaterial == 'Solo Medida')
+        ? 'EMT'
+        : TechnicalCatalogMatrix.deduceFamilia(_selectedMaterial);
   }
 
   @override
@@ -555,7 +597,9 @@ class _MeasurementCaptureModalState extends State<MeasurementCaptureModal> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      isEditing ? 'Editar Cota de Medida' : 'Registrar Cota de Medida',
+                      widget.onlyDistance
+                          ? (isEditing ? 'Editar Distancia' : 'Registrar Distancia')
+                          : (isEditing ? 'Configurar Cota de Medida' : 'Registrar Cota de Medida'),
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 16,
@@ -631,32 +675,222 @@ class _MeasurementCaptureModalState extends State<MeasurementCaptureModal> {
                   style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 11, fontStyle: FontStyle.italic),
                 ),
               ],
-              const SizedBox(height: 16),
 
-              // Selector contextual de Canalización / Tubería
+              // Si es gestión de escritorio, configurar si es Solo Medida o Metrado de Material
+              if (!widget.onlyDistance) ...[
+                const SizedBox(height: 16),
+                const Text(
+                  'Función de la Cota:',
+                  style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ChoiceChip(
+                        avatar: const Icon(Icons.straighten, size: 13),
+                        label: const Text('Solo Medida', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold)),
+                        selected: !_esMetrado,
+                        selectedColor: const Color(0xFF0284C7),
+                        backgroundColor: const Color(0xFF0F172A),
+                        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 0),
+                        labelPadding: const EdgeInsets.symmetric(horizontal: 2),
+                        onSelected: (val) => setState(() => _esMetrado = false),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: ChoiceChip(
+                        avatar: const Icon(Icons.inventory_2_outlined, size: 13),
+                        label: const Text('Metrado Material', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold)),
+                        selected: _esMetrado,
+                        selectedColor: const Color(0xFF10B981),
+                        backgroundColor: const Color(0xFF0F172A),
+                        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 0),
+                        labelPadding: const EdgeInsets.symmetric(horizontal: 2),
+                        onSelected: (val) => setState(() => _esMetrado = true),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+
+              // Solo si está activado Metrado de Material en Gabinete
+              if (!widget.onlyDistance && _esMetrado) ...[
+                const SizedBox(height: 16),
               Wrap(
                 alignment: WrapAlignment.spaceBetween,
                 crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 4,
                 children: [
                   const Text(
-                    'Canalización / Material:',
-                    style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+                    'Tipo de Canalización (Base):',
+                    style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12, fontWeight: FontWeight.w600),
                   ),
-                  if (widget.contextualConduits.isNotEmpty)
-                    const Text(
-                      '📍 Sugerido de pines',
-                      style: TextStyle(color: Color(0xFF4ADE80), fontSize: 11, fontWeight: FontWeight.w600),
+                  if (widget.clasificacion.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0284C7).withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: const Color(0xFF38BDF8), width: 0.8),
+                      ),
+                      child: Text(
+                        'Proyecto ${widget.clasificacion}',
+                        style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 10, fontWeight: FontWeight.bold),
+                      ),
                     ),
                 ],
               ),
               const SizedBox(height: 8),
 
-              // Chips de canalización
+              // Fila de pines flotantes de familias base (prioritarias primero)
               Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: _buildMaterialChips(),
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ...(() {
+                    final sortedFamilies = List<String>.from(TechnicalCatalogMatrix.familiasCanalizacion)
+                      ..sort((a, b) {
+                        final aPri = _isFamilyPriority(a);
+                        final bPri = _isFamilyPriority(b);
+                        if (aPri && !bPri) return -1;
+                        if (!aPri && bPri) return 1;
+                        return a.compareTo(b);
+                      });
+                    return sortedFamilies;
+                  })().map((fam) {
+                    final bool isFamilyActive = _selectedFamily == fam;
+                    final bool isPriorityForClasif = _isFamilyPriority(fam);
+
+                    return ChoiceChip(
+                      label: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _getFamilyIcon(fam),
+                            size: 14,
+                            color: isFamilyActive ? const Color(0xFF001F2F) : (isPriorityForClasif ? const Color(0xFFE3A51A) : Colors.white70),
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            isPriorityForClasif ? '$fam ★' : fam,
+                            style: TextStyle(
+                              color: isFamilyActive ? const Color(0xFF001F2F) : Colors.white,
+                              fontSize: 12,
+                              fontWeight: isFamilyActive ? FontWeight.bold : FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                      selected: isFamilyActive,
+                      selectedColor: const Color(0xFFE3A51A),
+                      backgroundColor: const Color(0xFF0F172A),
+                      side: BorderSide(
+                        color: isFamilyActive
+                            ? const Color(0xFFE3A51A)
+                            : (isPriorityForClasif ? const Color(0xFFE3A51A) : const Color(0xFF334155)),
+                        width: isFamilyActive || isPriorityForClasif ? 1.5 : 1.0,
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                      onSelected: (selected) {
+                        if (selected) {
+                          _onFamilySelected(fam);
+                        }
+                      },
+                    );
+                  }),
+                  ChoiceChip(
+                    label: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.flash_on, size: 14, color: Colors.amberAccent),
+                        SizedBox(width: 4),
+                        Text('⚡ Por definir', style: TextStyle(fontSize: 11)),
+                      ],
+                    ),
+                    selected: _selectedFamily == 'Por definir',
+                    selectedColor: const Color(0xFFE3A51A),
+                    backgroundColor: const Color(0xFF0F172A),
+                    side: BorderSide(
+                      color: _selectedFamily == 'Por definir' ? const Color(0xFFE3A51A) : const Color(0xFF334155),
+                    ),
+                    onSelected: (selected) {
+                      if (selected) {
+                        setState(() {
+                          _selectedFamily = 'Por definir';
+                          _selectedMaterial = 'Por definir';
+                        });
+                      }
+                    },
+                  ),
+                ],
               ),
+
+              const SizedBox(height: 14),
+
+              // 2. NIVEL 2: MEDIDAS Y VARIANTES DISPONIBLES INMEDIATAMENTE DEBAJO
+              if (_selectedFamily != 'Por definir') ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0F172A),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFF334155), width: 1.0),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.straighten, size: 14, color: Color(0xFF38BDF8)),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Medidas disponibles para $_selectedFamily:',
+                              style: const TextStyle(
+                                color: Color(0xFF38BDF8),
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: _buildSizedVariantChips(),
+                      ),
+                    ],
+                  ),
+                ),
+              ] else ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0F172A),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFF334155)),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.amber, size: 18),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Cota rápida sin material asignado. Podrás definir el material específico en la pantalla de gabinete.',
+                          style: TextStyle(color: Colors.white70, fontSize: 11),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
 
               const SizedBox(height: 20),
 
@@ -706,45 +940,71 @@ class _MeasurementCaptureModalState extends State<MeasurementCaptureModal> {
     );
   }
 
+  bool _isFamilyPriority(String fam) {
+    final list = TechnicalCatalogMatrix.materialesPorClasificacion[widget.clasificacion] ?? [];
+    return list.any((item) => TechnicalCatalogMatrix.deduceFamilia(item) == fam);
+  }
 
-  List<Widget> _buildMaterialChips() {
-    final Set<String> allOptions = {};
-    allOptions.addAll(widget.contextualConduits);
-    allOptions.addAll([
-      'Tubo EMT 3/4"',
-      'Tubo EMT 1"',
-      'Canaleta 40x25',
-      'Canaleta 25x14',
-      'Tubo PVC SAP 3/4"',
-      'Bandeja Portacables',
-      'Cable UTP Cat6',
-    ]);
+  IconData _getFamilyIcon(String fam) {
+    switch (fam) {
+      case 'EMT':
+        return Icons.straighten;
+      case 'IMC':
+        return Icons.hardware;
+      case 'PVC':
+        return Icons.water_drop_outlined;
+      case 'Canaleta':
+        return Icons.view_week_outlined;
+      case 'Liquid Tight':
+        return Icons.cable;
+      case 'Bandeja':
+        return Icons.table_rows_outlined;
+      default:
+        return Icons.inventory_2_outlined;
+    }
+  }
 
-    return allOptions.take(8).map((mat) {
-      final bool isSelected = _selectedMaterial == mat;
-      final bool isFromPin = widget.contextualConduits.contains(mat);
+  void _onFamilySelected(String fam) {
+    setState(() {
+      _selectedFamily = fam;
+      final variants = TechnicalCatalogMatrix.familiasYVariantesCanalizacion[fam] ?? [];
+      if (!variants.contains(_selectedMaterial)) {
+        // Seleccionar por defecto la medida estándar de la familia (ej. 3/4" o 40x25)
+        if (variants.length >= 2) {
+          _selectedMaterial = variants[1]; // Habitualmente 3/4" o tamaño estándar
+        } else if (variants.isNotEmpty) {
+          _selectedMaterial = variants.first;
+        }
+      }
+    });
+  }
+
+  List<Widget> _buildSizedVariantChips() {
+    final variants = TechnicalCatalogMatrix.familiasYVariantesCanalizacion[_selectedFamily] ?? [];
+
+    return variants.map((variant) {
+      final bool isSelected = _selectedMaterial == variant;
 
       return ChoiceChip(
         label: Text(
-          isFromPin ? '★ $mat' : mat,
+          variant,
           style: TextStyle(
             color: isSelected ? const Color(0xFF001F2F) : Colors.white,
-            fontSize: 11,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            fontSize: 10,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
           ),
         ),
         selected: isSelected,
         selectedColor: const Color(0xFFE3A51A),
-        backgroundColor: const Color(0xFF0F172A),
+        backgroundColor: const Color(0xFF1E293B),
         side: BorderSide(
-          color: isSelected
-              ? const Color(0xFFE3A51A)
-              : (isFromPin ? const Color(0xFF4ADE80) : const Color(0xFF334155)),
-          width: isFromPin ? 1.4 : 1.0,
+          color: isSelected ? const Color(0xFFE3A51A) : const Color(0xFF475569),
+          width: isSelected ? 1.5 : 1.0,
         ),
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
         onSelected: (selected) {
           if (selected) {
-            setState(() => _selectedMaterial = mat);
+            setState(() => _selectedMaterial = variant);
           }
         },
       );
@@ -763,17 +1023,22 @@ class _MeasurementCaptureModalState extends State<MeasurementCaptureModal> {
       return;
     }
 
+    final String finalMaterial = (widget.onlyDistance || !_esMetrado) ? 'Solo Medida' : _selectedMaterial;
+    final bool finalEsMetrado = !widget.onlyDistance && _esMetrado;
+
     final result = (widget.existingMeasurement != null)
         ? widget.existingMeasurement!.copyWith(
             longitudMetros: meters,
-            material: _selectedMaterial,
+            material: finalMaterial,
+            esMetradoMaterial: finalEsMetrado,
           )
         : LinearMeasurement(
             id: 'cota_${DateTime.now().millisecondsSinceEpoch}',
             startOffset: widget.start,
             endOffset: widget.end,
             longitudMetros: meters,
-            material: _selectedMaterial,
+            material: finalMaterial,
+            esMetradoMaterial: finalEsMetrado,
           );
 
     Navigator.pop(

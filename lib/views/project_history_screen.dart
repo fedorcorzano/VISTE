@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import '../models/session_evidence_model.dart';
 import '../services/project_storage_service.dart';
-import 'camera_overlay_screen.dart';
+import 'desk_analysis_screen.dart';
+import 'field_photo_capture_screen.dart';
 import 'project_summary_report_screen.dart';
+import '../widgets/manager_validation_sheet.dart';
 
 /// Pantalla de Historial y Recuperación de Proyectos
 /// Permite buscar, auditar y generar reportes técnicos en PDF en cualquier momento
@@ -347,6 +349,11 @@ class _ProjectHistoryScreenState extends State<ProjectHistoryScreen> {
                     runSpacing: 8,
                     children: [
                       _buildBadge(
+                        icon: Icons.category_outlined,
+                        label: session.project.clasificacion,
+                        color: const Color(0xFFFBBF24),
+                      ),
+                      _buildBadge(
                         icon: Icons.camera_alt_outlined,
                         label: '${session.totalPhotos} ${session.totalPhotos == 1 ? 'Foto' : 'Fotos'}',
                         color: const Color(0xFF38BDF8),
@@ -367,6 +374,12 @@ class _ProjectHistoryScreenState extends State<ProjectHistoryScreen> {
                           icon: Icons.warning_amber_rounded,
                           label: '$hazardsCount Riesgos SST',
                           color: const Color(0xFFF59E0B),
+                        ),
+                      if (session.customHierarchyResponsibles.values.any((v) => v.trim().isNotEmpty))
+                        _buildBadge(
+                          icon: Icons.verified_user_outlined,
+                          label: 'SST Asignado',
+                          color: const Color(0xFF10B981),
                         ),
                     ],
                   ),
@@ -394,30 +407,33 @@ class _ProjectHistoryScreenState extends State<ProjectHistoryScreen> {
                   const SizedBox(height: 12),
 
                   // Botones de acción principales
+                  // Fila 1: Continuar Captura (+ Fotos) y Marcación Técnica (Req. 4)
                   Row(
                     children: [
-                      // Botón Continuar / Tomar más fotos
+                      // Botón Continuar Captura / Añadir Fotos a proyecto existente
                       Expanded(
-                        flex: 1,
-                        child: OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFF38BDF8),
-                            side: const BorderSide(color: Color(0xFF38BDF8)),
-                            padding: const EdgeInsets.symmetric(vertical: 11),
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF0284C7),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 4),
+                            elevation: 0,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10),
                             ),
                           ),
-                          icon: const Icon(Icons.add_a_photo, size: 16),
+                          icon: const Icon(Icons.add_a_photo, size: 15),
                           label: const Text(
-                            'Continuar',
+                            'Añadir Fotos',
                             style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                           onPressed: () async {
                             await Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (context) => CameraOverlayScreen(
+                                builder: (context) => FieldPhotoCaptureScreen(
                                   project: session.project,
                                   existingSession: session,
                                 ),
@@ -427,24 +443,92 @@ class _ProjectHistoryScreenState extends State<ProjectHistoryScreen> {
                           },
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      // Botón Generar Reportes PDF
+                      const SizedBox(width: 8),
+                      // Botón Marcación / Gabinete
                       Expanded(
-                        flex: 2,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF38BDF8),
+                            side: const BorderSide(color: Color(0xFF38BDF8)),
+                            padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 4),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          icon: const Icon(Icons.architecture, size: 15),
+                          label: const Text(
+                            'Marcación',
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          onPressed: () async {
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => DeskAnalysisScreen(
+                                  session: session,
+                                ),
+                              ),
+                            );
+                            _loadSessions();
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+
+                  // Fila 2: Validación Gestor SST y Generación de Reportes PDF
+                  Row(
+                    children: [
+                      // Botón Validar Gestor / SST
+                      Expanded(
                         child: ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF10B981),
+                            backgroundColor: const Color(0xFFD97706),
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 11),
+                            padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 4),
                             elevation: 0,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10),
                             ),
                           ),
-                          icon: const Icon(Icons.picture_as_pdf, size: 16),
+                          icon: const Icon(Icons.fact_check_outlined, size: 15),
                           label: const Text(
-                            'Generar Reportes',
-                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                            'Validar SST',
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          onPressed: () async {
+                            await showManagerValidationSheet(
+                              context: context,
+                              session: session,
+                              onSaved: () => _loadSessions(),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      // Botón Generar Reportes PDF
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF10B981),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 4),
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          icon: const Icon(Icons.picture_as_pdf, size: 15),
+                          label: const Text(
+                            'Reportes PDF',
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                           onPressed: () async {
                             await Navigator.push(

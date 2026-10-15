@@ -6,6 +6,7 @@ class ProjectModel {
   final String celular;
   final String correo;
   final String proyecto;
+  final String clasificacion; // 'Residencial' | 'Comercial' | 'Corporativo' | 'Industrial'
   final String fecha;
   final String mapa;
   final String responsable;
@@ -25,6 +26,7 @@ class ProjectModel {
     required this.celular,
     required this.correo,
     required this.proyecto,
+    this.clasificacion = 'Comercial',
     required this.fecha,
     required this.mapa,
     required this.responsable,
@@ -45,6 +47,7 @@ class ProjectModel {
     String? celular,
     String? correo,
     String? proyecto,
+    String? clasificacion,
     String? fecha,
     String? mapa,
     String? responsable,
@@ -64,6 +67,7 @@ class ProjectModel {
       celular: celular ?? this.celular,
       correo: correo ?? this.correo,
       proyecto: proyecto ?? this.proyecto,
+      clasificacion: clasificacion ?? this.clasificacion,
       fecha: fecha ?? this.fecha,
       mapa: mapa ?? this.mapa,
       responsable: responsable ?? this.responsable,
@@ -94,6 +98,7 @@ class ProjectModel {
       'celular': celular,
       'correo': correo,
       'proyecto': proyecto,
+      'clasificacion': clasificacion,
       'areaSector': areaFinal,
       'area': areaFinal,
       'numFoto': numFoto,
@@ -119,6 +124,7 @@ class ProjectModel {
       'celular': celular,
       'correo': correo,
       'proyecto': proyecto,
+      'clasificacion': clasificacion,
       'fecha': fecha,
       'mapa': mapa,
       'responsable': responsable,
@@ -141,6 +147,7 @@ class ProjectModel {
       celular: map['celular'] as String? ?? '',
       correo: map['correo'] as String? ?? '',
       proyecto: map['proyecto'] as String? ?? '',
+      clasificacion: map['clasificacion'] as String? ?? 'Comercial',
       fecha: map['fecha'] as String? ?? '',
       mapa: map['mapa'] as String? ?? '',
       responsable: map['responsable'] as String? ?? '',

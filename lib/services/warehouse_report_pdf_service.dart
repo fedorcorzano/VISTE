@@ -1,16 +1,49 @@
 import 'dart:typed_data';
+import 'package:http/http.dart' as http;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../models/session_evidence_model.dart';
 import 'catalog_visual_service.dart';
 
 class WarehouseReportPdfService {
+  /// Descarga bytes de imagen de catálogo de forma segura con timeout
+  static Future<Uint8List?> _fetchImage(String url) async {
+    if (url.isEmpty || !url.startsWith('http')) return null;
+    try {
+      final client = http.Client();
+      final res = await client.get(Uri.parse(url)).timeout(const Duration(seconds: 4));
+      if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
+        return res.bodyBytes;
+      }
+    } catch (_) {}
+    return null;
+  }
+
   /// Genera el reporte especializado exclusivo para el Almacén y Pañol técnico
   /// con imágenes destacadas ("vitales") de cada herramienta requerida para la obra.
   static Future<Uint8List> generatePdf(ProjectSessionModel session) async {
     final pdf = pw.Document();
 
     final tools = session.getValidatedToolsWithFrequency();
+
+    // Precarga paralela de imágenes reales de herramientas
+    final Map<String, Uint8List> imageCache = {};
+    final Set<String> urlsToFetch = {};
+    for (final t in tools) {
+      final info = CatalogVisualService.getItemInfo(t.name);
+      if (info.imageUrl.isNotEmpty && info.imageUrl.startsWith('http')) {
+        urlsToFetch.add(info.imageUrl);
+      }
+    }
+
+    if (urlsToFetch.isNotEmpty) {
+      await Future.wait(urlsToFetch.map((url) async {
+        final bytes = await _fetchImage(url);
+        if (bytes != null) {
+          imageCache[url] = bytes;
+        }
+      }));
+    }
 
     const primaryColor = PdfColor.fromInt(0xFF0F172A); // Slate 900
     const accentColor = PdfColor.fromInt(0xFF0284C7); // Sky 600
@@ -209,13 +242,24 @@ class WarehouseReportPdfService {
                           bottomLeft: pw.Radius.circular(6),
                         ),
                       ),
-                      child: pw.Center(
-                        child: pw.Text(
-                          '[ FOTO DE\nHERRAMIENTA ]',
-                          textAlign: pw.TextAlign.center,
-                          style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey700),
-                        ),
-                      ),
+                      child: imageCache[visualInfo.imageUrl] != null
+                          ? pw.ClipRRect(
+                              horizontalRadius: 6,
+                              verticalRadius: 6,
+                              child: pw.Image(
+                                pw.MemoryImage(imageCache[visualInfo.imageUrl]!),
+                                fit: pw.BoxFit.cover,
+                                width: 82,
+                                height: 82,
+                              ),
+                            )
+                          : pw.Center(
+                              child: pw.Text(
+                                '[ FOTO DE\nHERRAMIENTA ]',
+                                textAlign: pw.TextAlign.center,
+                                style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey700),
+                              ),
+                            ),
                     ),
                     pw.SizedBox(width: 10),
 

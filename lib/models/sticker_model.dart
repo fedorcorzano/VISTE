@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/technical_catalog_icons.dart';
 
 enum StickerCategory { estructuras, materiales, peligros }
 
@@ -17,31 +18,31 @@ class StickerModel {
     required this.category,
   });
 
-  /// Crea un sticker a partir de una cadena y una categoría, asignando colores e íconos adecuados
+  /// Crea un sticker a partir de una cadena y una categoría, asignando colores e íconos especializados
   factory StickerModel.fromCatalog(String title, StickerCategory category) {
     switch (category) {
       case StickerCategory.estructuras:
         return StickerModel(
           title: title,
-          icon: Icons.foundation,
+          icon: TechnicalCatalogIcons.getStructureIcon(title),
           backgroundColor: const Color(0xFF1E293B),
-          accentColor: const Color(0xFF38BDF8),
+          accentColor: const Color(0xFF00B0FF),
           category: category,
         );
       case StickerCategory.materiales:
         return StickerModel(
           title: title,
-          icon: Icons.hardware,
+          icon: TechnicalCatalogIcons.getMaterialIcon(title),
           backgroundColor: const Color(0xFF14532D),
-          accentColor: const Color(0xFF4ADE80),
+          accentColor: const Color(0xFF00E676),
           category: category,
         );
       case StickerCategory.peligros:
         return StickerModel(
           title: title,
-          icon: Icons.warning_amber_rounded,
+          icon: TechnicalCatalogIcons.getHazardIcon(title),
           backgroundColor: const Color(0xFF7C2D12),
-          accentColor: const Color(0xFFFBBF24),
+          accentColor: const Color(0xFFFFD600),
           category: category,
         );
     }
@@ -62,12 +63,207 @@ class PlacedSticker {
     this.scale = 1.0,
     this.rotation = 0.0,
   });
+
+  PlacedSticker copyWith({
+    String? id,
+    StickerModel? sticker,
+    Offset? position,
+    double? scale,
+    double? rotation,
+  }) {
+    return PlacedSticker(
+      id: id ?? this.id,
+      sticker: sticker ?? this.sticker,
+      position: position ?? this.position,
+      scale: scale ?? this.scale,
+      rotation: rotation ?? this.rotation,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': sticker.title,
+      'category': sticker.category.name,
+      'dx': position.dx,
+      'dy': position.dy,
+      'scale': scale,
+      'rotation': rotation,
+    };
+  }
+
+  factory PlacedSticker.fromJson(Map<String, dynamic> json) {
+    final catName = json['category'] as String? ?? 'estructuras';
+    final category = StickerCategory.values.firstWhere(
+      (c) => c.name == catName,
+      orElse: () => StickerCategory.estructuras,
+    );
+    final title = json['title'] as String? ?? '';
+    final sticker = StickerModel.fromCatalog(title, category);
+    final dx = (json['dx'] as num?)?.toDouble() ?? 0.0;
+    final dy = (json['dy'] as num?)?.toDouble() ?? 0.0;
+    final scale = (json['scale'] as num?)?.toDouble() ?? 1.0;
+    final rotation = (json['rotation'] as num?)?.toDouble() ?? 0.0;
+
+    return PlacedSticker(
+      id: json['id'] as String? ?? 'pin_${DateTime.now().millisecondsSinceEpoch}',
+      sticker: sticker,
+      position: Offset(dx, dy),
+      scale: scale,
+      rotation: rotation,
+    );
+  }
 }
 
 /// ============================================================================
 /// MATRIZ TÉCNICA MAESTRA: VINCULACIÓN DE HERRAMIENTAS Y ACCESORIOS (VISTEC V2)
 /// ============================================================================
 class TechnicalCatalogMatrix {
+  // Clasificaciones oficiales de proyectos de VIGILARTE
+  static const List<String> clasificacionesProyectos = [
+    'Residencial',
+    'Comercial',
+    'Corporativo',
+    'Industrial',
+  ];
+
+  // Materiales prioritarios según el tipo/clasificación de proyecto
+  static const Map<String, List<String>> materialesPorClasificacion = {
+    'Residencial': [
+      'Canaletas',
+      'Tubo PVC SEL',
+      'Corrugado PVC',
+      'Tubo PVC SAP',
+    ],
+    'Comercial': [
+      'Tubo EMT',
+      'Canaletas',
+      'Corrugado EMT',
+      'Tubo PVC SAP',
+    ],
+    'Corporativo': [
+      'Tubo EMT',
+      'Bandeja Portacables',
+      'Canaletas',
+      'Corrugado EMT',
+    ],
+    'Industrial': [
+      'Tubo IMC',
+      'Tubo EMT',
+      'Liquid Tight',
+      'Tubo PVC SAP',
+      'Bandeja Portacables',
+    ],
+  };
+
+  /// Devuelve la lista completa de materiales colocando los prioritarios del tipo de proyecto
+  /// en los primeros lugares, a la espera de su rápida selección, sin ocultar ninguno.
+  static List<String> getPrioritizedMaterials(String? clasificacion, List<String> allMaterials) {
+    final key = clasificacion?.trim();
+    final priority = (key != null && materialesPorClasificacion.containsKey(key))
+        ? materialesPorClasificacion[key]!
+        : const <String>[];
+
+    final Set<String> prioritizedSet = {};
+    final List<String> result = [];
+
+    bool matchesPriority(String material, String priorityItem) {
+      final m = material.toLowerCase().trim();
+      final p = priorityItem.toLowerCase().trim();
+      if (m == p || m.contains(p) || p.contains(m)) return true;
+      final mStem = m.endsWith('s') ? m.substring(0, m.length - 1) : m;
+      final pStem = p.endsWith('s') ? p.substring(0, p.length - 1) : p;
+      return mStem.contains(pStem) || pStem.contains(mStem);
+    }
+
+    // 1. Primero los prioritarios que existan dentro de allMaterials
+    for (final p in priority) {
+      final matches = allMaterials.where((m) => matchesPriority(m, p));
+      for (final match in matches) {
+        if (prioritizedSet.add(match)) {
+          result.add(match);
+        }
+      }
+    }
+
+    // 2. Luego todo el resto de materiales disponibles
+    for (final m in allMaterials) {
+      if (prioritizedSet.add(m)) {
+        result.add(m);
+      }
+    }
+
+    return result;
+  }
+
+  // Familias principales de canalización (pines flotantes de selección base)
+  static const List<String> familiasCanalizacion = [
+    'EMT',
+    'IMC',
+    'PVC',
+    'Canaleta',
+    'Liquid Tight',
+    'Bandeja',
+  ];
+
+  // Variantes comerciales y medidas disponibles por cada familia
+  static const Map<String, List<String>> familiasYVariantesCanalizacion = {
+    'EMT': [
+      'Tubo EMT 1/2"',
+      'Tubo EMT 3/4"',
+      'Tubo EMT 1"',
+      'Tubo EMT 1 1/4"',
+      'Tubo EMT 1 1/2"',
+      'Tubo EMT 2"',
+      'Corrugado EMT 3/4"',
+    ],
+    'IMC': [
+      'Tubo IMC 1/2"',
+      'Tubo IMC 3/4"',
+      'Tubo IMC 1"',
+      'Tubo IMC 1 1/4"',
+      'Tubo IMC 1 1/2"',
+      'Tubo IMC 2"',
+    ],
+    'PVC': [
+      'Tubo PVC SEL 1/2"',
+      'Tubo PVC SEL 3/4"',
+      'Tubo PVC SEL 1"',
+      'Tubo PVC SAP 1/2"',
+      'Tubo PVC SAP 3/4"',
+      'Tubo PVC SAP 1"',
+      'Corrugado PVC 3/4"',
+    ],
+    'Canaleta': [
+      'Canaleta 20x10 mm',
+      'Canaleta 40x25 mm',
+      'Canaleta 60x40 mm',
+      'Canaleta 100x50 mm',
+    ],
+    'Liquid Tight': [
+      'Liquid Tight 1/2"',
+      'Liquid Tight 3/4"',
+      'Liquid Tight 1"',
+    ],
+    'Bandeja': [
+      'Bandeja Portacables 100x50',
+      'Bandeja Portacables 150x50',
+      'Bandeja Portacables 200x50',
+    ],
+  };
+
+  /// Deducir la familia base a partir de un material o texto de cota
+  static String deduceFamilia(String material) {
+    final m = material.toUpperCase();
+    if (m.contains('EMT')) return 'EMT';
+    if (m.contains('IMC')) return 'IMC';
+    if (m.contains('PVC') || m.contains('SEL') || m.contains('SAP')) return 'PVC';
+    if (m.contains('CANALETA')) return 'Canaleta';
+    if (m.contains('LIQUID') || m.contains('TIGHT')) return 'Liquid Tight';
+    if (m.contains('BANDEJA')) return 'Bandeja';
+    return 'EMT'; // Default común
+  }
+
   // Lista oficial de materiales de canalización / tubería
   static const List<String> defaultMateriales = [
     'Canaletas',

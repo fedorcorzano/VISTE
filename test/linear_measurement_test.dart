@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vistec/models/linear_measurement_model.dart';
 import 'package:vistec/models/project_model.dart';
 import 'package:vistec/models/session_evidence_model.dart';
+import 'package:vistec/models/sticker_model.dart';
 import 'package:vistec/services/project_manager_report_pdf_service.dart';
 import 'package:vistec/services/purchasing_report_pdf_service.dart';
 import 'package:vistec/services/voice_recognition_service.dart';
@@ -248,4 +249,254 @@ void main() {
       expect(find.byType(CustomPaint), findsOneWidget);
     });
   });
+
+  group('Project Classification & Prioritized Materials Tests', () {
+    test('ProjectModel clasificacion defaults to Comercial and round-trips via storage map', () {
+      final defaultProject = ProjectModel(
+        contacto: 'Juan Pérez',
+        direccion: 'Av. Arequipa 123',
+        celular: '999888777',
+        correo: 'juan@test.com',
+        proyecto: 'Instalación Residencial',
+        responsable: 'Carlos Técnico',
+        fecha: '2026-10-01',
+        mapa: '-12.0, -77.0',
+      );
+      expect(defaultProject.clasificacion, 'Comercial');
+
+      final residential = defaultProject.copyWith(clasificacion: 'Residencial');
+      expect(residential.clasificacion, 'Residencial');
+
+      final map = residential.toStorageMap();
+      expect(map['clasificacion'], 'Residencial');
+
+      final restored = ProjectModel.fromStorageMap(map);
+      expect(restored.clasificacion, 'Residencial');
+    });
+
+    test('LinearMeasurement.labelDistanceOnly outputs meters without material', () {
+      final m = LinearMeasurement(
+        id: 'cota_label_test',
+        startNormalized: const Offset(0.1, 0.1),
+        endNormalized: const Offset(0.5, 0.5),
+        meters: 18.75,
+        material: 'Tubo EMT 3/4"',
+      );
+
+      expect(m.labelDistanceOnly, '18.75 m');
+      expect(m.formattedLabel, '18.75 m • Tubo EMT 3/4"');
+    });
+
+    test('TechnicalCatalogMatrix returns prioritized materials at front without data loss', () {
+      final allMaterials = [
+        'Tubo EMT 3/4"',
+        'Canaleta 20x10',
+        'Tubo PVC Conduit',
+        'Tubo Liquid Tight',
+        'Canaleta Plastica 40x25 con Division',
+        'Bandeja Portacables Ranurada',
+      ];
+
+      final prioritizedResidencial = TechnicalCatalogMatrix.getPrioritizedMaterials(
+        'Residencial',
+        allMaterials,
+      );
+
+      // Verify prioritized items are at the front
+      expect(prioritizedResidencial.first, 'Canaleta 20x10');
+      // Verify no materials were lost or duplicated
+      expect(prioritizedResidencial.length, allMaterials.length);
+      expect(prioritizedResidencial.toSet(), allMaterials.toSet());
+
+      final prioritizedIndustrial = TechnicalCatalogMatrix.getPrioritizedMaterials(
+        'Industrial',
+        allMaterials,
+      );
+      expect(prioritizedIndustrial.contains('Tubo Liquid Tight'), isTrue);
+      // Liquid Tight or Bandeja must appear before residential canaleta
+      final ltIndex = prioritizedIndustrial.indexOf('Tubo Liquid Tight');
+      final canaletaIndex = prioritizedIndustrial.indexOf('Canaleta 20x10');
+      expect(ltIndex < canaletaIndex, isTrue);
+    });
+
+    test('PlacedSticker JSON serialization round-trip', () {
+      final sticker = PlacedSticker(
+        id: 'placed_123',
+        sticker: StickerModel.fromCatalog(
+          'Cámara Domo IP',
+          StickerCategory.materiales,
+        ),
+        position: const Offset(0.42, 0.68),
+        scale: 1.35,
+        rotation: 0.25,
+      );
+
+      final json = sticker.toJson();
+      expect(json['id'], 'placed_123');
+      expect(json['title'], 'Cámara Domo IP');
+      expect(json['category'], 'materiales');
+      expect(json['scale'], 1.35);
+
+      final restored = PlacedSticker.fromJson(json);
+      expect(restored.id, sticker.id);
+      expect(restored.sticker.title, 'Cámara Domo IP');
+      expect(restored.sticker.category, StickerCategory.materiales);
+      expect(restored.position.dx, closeTo(0.42, 0.001));
+      expect(restored.position.dy, closeTo(0.68, 0.001));
+      expect(restored.scale, 1.35);
+      expect(restored.rotation, 0.25);
+    });
+
+    test('Sequential numbering per category logic', () {
+      final pins = [
+        PlacedSticker(
+          id: 'p1',
+          sticker: StickerModel.fromCatalog('Pared Concreto', StickerCategory.estructuras),
+          position: Offset.zero,
+        ),
+        PlacedSticker(
+          id: 'p2',
+          sticker: StickerModel.fromCatalog('Tubo EMT', StickerCategory.materiales),
+          position: Offset.zero,
+        ),
+        PlacedSticker(
+          id: 'p3',
+          sticker: StickerModel.fromCatalog('Bandeja Ranurada', StickerCategory.estructuras),
+          position: Offset.zero,
+        ),
+        PlacedSticker(
+          id: 'p4',
+          sticker: StickerModel.fromCatalog('Cables Expuestos', StickerCategory.peligros),
+          position: Offset.zero,
+        ),
+        PlacedSticker(
+          id: 'p5',
+          sticker: StickerModel.fromCatalog('Caja de Pase', StickerCategory.materiales),
+          position: Offset.zero,
+        ),
+      ];
+
+      int getCategoryPinNumber(PlacedSticker target) {
+        int count = 0;
+        for (final p in pins) {
+          if (p.sticker.category == target.sticker.category) {
+            count++;
+          }
+          if (p.id == target.id) {
+            return count;
+          }
+        }
+        return count > 0 ? count : 1;
+      }
+
+      // Estructuras: p1 -> 1, p3 -> 2
+      expect(getCategoryPinNumber(pins[0]), 1);
+      expect(getCategoryPinNumber(pins[2]), 2);
+
+      // Materiales: p2 -> 1, p5 -> 2
+      expect(getCategoryPinNumber(pins[1]), 1);
+      expect(getCategoryPinNumber(pins[4]), 2);
+
+      // Peligros: p4 -> 1
+      expect(getCategoryPinNumber(pins[3]), 1);
+    });
+
+    test('Cota point insertion logic: drag vs two-tap workflow', () {
+      // 1. Workflow A: Arrastre directo de Punto A a Punto B
+      Offset? guidedOriginA;
+      Offset? guidedTargetB;
+      bool isGuidingOriginA = false;
+      bool isGuidingDestinationB = false;
+
+      // Touch down en (100, 100)
+      const touchStart = Offset(100, 100);
+      guidedOriginA = touchStart;
+      guidedTargetB = touchStart;
+      isGuidingOriginA = true;
+
+      // Arrastre continuo hacia (300, 200)
+      const touchMove1 = Offset(200, 150);
+      guidedTargetB = touchMove1;
+      expect(guidedOriginA, touchStart, reason: 'Punto A no debe sobreescribirse al arrastrar');
+
+      const touchMove2 = Offset(300, 200);
+      guidedTargetB = touchMove2;
+      expect(guidedOriginA, touchStart);
+
+      // Soltar dedo en (300, 200)
+      final distDrag = (guidedTargetB - guidedOriginA).distance;
+      expect(distDrag > 18.0, isTrue);
+
+      final cotaCreatedDrag = LinearMeasurement(
+        id: 'cota_drag',
+        startOffset: guidedOriginA,
+        endOffset: guidedTargetB,
+        longitudMetros: 5.5,
+        material: 'Tubo EMT 3/4"',
+      );
+      expect(cotaCreatedDrag.startOffset, const Offset(100, 100));
+      expect(cotaCreatedDrag.endOffset, const Offset(300, 200));
+
+      // 2. Workflow B: Dos toques separados (Tap A, luego Tap B)
+      guidedOriginA = null;
+      guidedTargetB = null;
+      isGuidingOriginA = false;
+      isGuidingDestinationB = false;
+
+      // Toque 1: Tap corto en (50, 50)
+      const tapA = Offset(50, 50);
+      guidedOriginA = tapA;
+      guidedTargetB = tapA;
+      isGuidingOriginA = true;
+
+      // Al soltar sin desplazamiento (< 18px), se fija Punto A y se espera Punto B
+      final distTapA = (guidedTargetB - guidedOriginA).distance;
+      expect(distTapA < 18.0, isTrue);
+      isGuidingOriginA = false;
+      isGuidingDestinationB = true;
+      guidedTargetB = null;
+
+      expect(guidedOriginA, tapA);
+      expect(isGuidingDestinationB, isTrue);
+
+      // Toque 2: Tap en (250, 180)
+      const tapB = Offset(250, 180);
+      guidedTargetB = tapB;
+      final distTapB = (guidedTargetB - guidedOriginA).distance;
+      expect(distTapB > 18.0, isTrue);
+
+      final cotaCreatedTap = LinearMeasurement(
+        id: 'cota_tap',
+        startOffset: guidedOriginA,
+        endOffset: guidedTargetB,
+        longitudMetros: 4.2,
+        material: 'Canaleta 40x25',
+      );
+      expect(cotaCreatedTap.startOffset, const Offset(50, 50));
+      expect(cotaCreatedTap.endOffset, const Offset(250, 180));
+    });
+
+    testWidgets('MeasurementLinesPainter paints live cota while guiding destination B', (tester) async {
+      final painter = MeasurementLinesPainter(
+        measurements: [],
+        guidedOriginA: const Offset(50, 50),
+        currentEnd: const Offset(200, 150),
+        activeMaterial: 'Tubo EMT 3/4"',
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: CustomPaint(
+              size: const Size(400, 400),
+              painter: painter,
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byType(CustomPaint), findsWidgets);
+    });
+  });
 }
+

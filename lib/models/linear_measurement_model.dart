@@ -8,6 +8,7 @@ class LinearMeasurement {
   final Offset endOffset;   // Coordenadas normalizadas o en píxeles del punto final
   final double longitudMetros; // Longitud ingresada por el técnico en metros (ej. 12.50)
   final String material; // Material o canalización (ej. Tubo EMT 3/4", Canaleta 40x25)
+  final bool esMetradoMaterial; // Si es true, computa en metrado de materiales; si es false, es solo medida de referencia
   final String? origenEstructura; // Opcional: Estructura de partida
   final String? destinoEstructura; // Opcional: Estructura de llegada
   final DateTime timestamp;
@@ -21,6 +22,7 @@ class LinearMeasurement {
     double? longitudMetros,
     double? meters,
     required this.material,
+    this.esMetradoMaterial = false,
     String? origenEstructura,
     String? startStructure,
     String? destinoEstructura,
@@ -46,7 +48,18 @@ class LinearMeasurement {
     final String cleanMetros = longitudMetros % 1 == 0
         ? longitudMetros.toInt().toString()
         : longitudMetros.toStringAsFixed(2);
+    if (material.isEmpty || material == 'Por definir' || material == 'Sin especificar') {
+      return '$cleanMetros m';
+    }
     return '$cleanMetros m • $material';
+  }
+
+  /// Etiqueta con sólo la distancia en metros (ej: "12.50 m") para el trazo sobre la foto
+  String get labelDistanceOnly {
+    final String cleanMetros = longitudMetros % 1 == 0
+        ? longitudMetros.toInt().toString()
+        : longitudMetros.toStringAsFixed(2);
+    return '$cleanMetros m';
   }
 
   /// Tramo descriptivo (ej: "Bandeja a Caja de Paso" o "Tramo #1")
@@ -70,6 +83,7 @@ class LinearMeasurement {
     Offset? endOffset,
     double? longitudMetros,
     String? material,
+    bool? esMetradoMaterial,
     String? origenEstructura,
     String? destinoEstructura,
     DateTime? timestamp,
@@ -80,6 +94,7 @@ class LinearMeasurement {
       endOffset: endOffset ?? this.endOffset,
       longitudMetros: longitudMetros ?? this.longitudMetros,
       material: material ?? this.material,
+      esMetradoMaterial: esMetradoMaterial ?? this.esMetradoMaterial,
       origenEstructura: origenEstructura ?? this.origenEstructura,
       destinoEstructura: destinoEstructura ?? this.destinoEstructura,
       timestamp: timestamp ?? this.timestamp,
@@ -97,6 +112,7 @@ class LinearMeasurement {
       'endY': endOffset.dy,
       'longitudMetros': longitudMetros,
       'material': material,
+      'esMetradoMaterial': esMetradoMaterial,
       'origenEstructura': origenEstructura,
       'destinoEstructura': destinoEstructura,
       'timestamp': timestamp.toIso8601String(),
@@ -117,7 +133,8 @@ class LinearMeasurement {
         (json['endY'] as num?)?.toDouble() ?? 0.0,
       ),
       longitudMetros: (json['longitudMetros'] as num?)?.toDouble() ?? 0.0,
-      material: json['material'] as String? ?? 'Canalización',
+      material: json['material'] as String? ?? 'Solo Medida',
+      esMetradoMaterial: json['esMetradoMaterial'] as bool? ?? false,
       origenEstructura: json['origenEstructura'] as String?,
       destinoEstructura: json['destinoEstructura'] as String?,
       timestamp: json['timestamp'] != null
