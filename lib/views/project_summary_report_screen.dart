@@ -238,18 +238,6 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
             canDebug: false,
             pdfFileName: 'VIGILARTE_Matriz_IPERC_Continuo.pdf',
             previewPageMargin: const EdgeInsets.all(12),
-            actions: [
-              PdfPreviewAction(
-                icon: const Icon(Icons.share, color: Colors.white),
-                onPressed: (context, build, pageFormat) async {
-                  final bytes = await build(pageFormat);
-                  await Printing.sharePdf(
-                    bytes: bytes,
-                    filename: 'VIGILARTE_Matriz_IPERC_Continuo.pdf',
-                  );
-                },
-              ),
-            ],
           ),
         ),
       ),
@@ -264,6 +252,7 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
     int currentStep = 0;
     final int totalSteps = widget.session.photos.isNotEmpty ? widget.session.photos.length : 1;
     String currentArea = 'Iniciando conexión con Google Apps Script...';
+    bool isProgressDialogOpen = true;
 
     showDialog(
       context: context,
@@ -279,39 +268,45 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
                 children: [
                   Icon(Icons.cloud_upload_outlined, color: Color(0xFF38BDF8), size: 24),
                   SizedBox(width: 8),
-                  Text(
-                    'Sincronizando con Google Cloud',
-                    style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                  Expanded(
+                    child: Text(
+                      'Sincronizando con Google Cloud',
+                      style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ],
               ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Subiendo fotografías con cotas y pines a Google Drive y registrando datos en Google Sheets...',
-                    style: TextStyle(color: Colors.white70, fontSize: 12),
-                  ),
-                  const SizedBox(height: 16),
-                  LinearProgressIndicator(
-                    value: totalSteps > 0 ? (currentStep / totalSteps).clamp(0.0, 1.0) : null,
-                    backgroundColor: const Color(0xFF334155),
-                    valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF38BDF8)),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Evidencia $currentStep de $totalSteps',
-                    style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 12, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    currentArea,
-                    style: const TextStyle(color: Colors.white60, fontSize: 11),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Subiendo fotografías con cotas y pines a Google Drive y registrando datos en Google Sheets...',
+                      style: TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                    const SizedBox(height: 16),
+                    LinearProgressIndicator(
+                      value: totalSteps > 0 ? (currentStep / totalSteps).clamp(0.0, 1.0) : null,
+                      backgroundColor: const Color(0xFF334155),
+                      valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF38BDF8)),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Evidencia $currentStep de $totalSteps',
+                      style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      currentArea,
+                      style: const TextStyle(color: Colors.white60, fontSize: 11),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
               ),
             );
           },
@@ -324,21 +319,28 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
       final result = await sheetsService.syncSession(
         widget.session,
         onProgress: (current, total, area) {
+          if (!isProgressDialogOpen) return;
           currentStep = current;
           currentArea = 'Subiendo a Drive y registrando: $area';
-          _syncStateSetter?.call(() {});
+          try {
+            _syncStateSetter?.call(() {});
+          } catch (_) {}
         },
       );
 
-      if (mounted) {
-        Navigator.pop(context); // Cerrar diálogo de progreso
+      if (isProgressDialogOpen) {
+        isProgressDialogOpen = false;
+        _syncStateSetter = null;
+        if (mounted && Navigator.canPop(context)) {
+          Navigator.pop(context); // Cerrar diálogo de progreso
+        }
       }
 
       if (result.isSuccess) {
-        setState(() {
-          _isCloudSynced = true;
-        });
         if (mounted) {
+          setState(() {
+            _isCloudSynced = true;
+          });
           showDialog(
             context: context,
             builder: (ctx) => AlertDialog(
@@ -348,48 +350,52 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
                 children: [
                   Icon(Icons.cloud_done, color: Color(0xFF10B981), size: 26),
                   SizedBox(width: 8),
-                  Text('¡Sincronización Exitosa!', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                ],
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(result.message, style: const TextStyle(color: Colors.white70, fontSize: 13)),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF0F172A),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Row(
-                          children: [
-                            Icon(Icons.folder_shared_outlined, color: Color(0xFF10B981), size: 16),
-                            SizedBox(width: 6),
-                            Text('Carpeta Google Drive:', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
-                          ],
-                        ),
-                        const SizedBox(height: 2),
-                        const Text('• Vigilarte_Evidencias', style: TextStyle(color: Color(0xFF38BDF8), fontSize: 11)),
-                        const SizedBox(height: 8),
-                        const Row(
-                          children: [
-                            Icon(Icons.table_chart_outlined, color: Color(0xFF10B981), size: 16),
-                            SizedBox(width: 6),
-                            Text('Pestaña Google Sheets:', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
-                          ],
-                        ),
-                        const SizedBox(height: 2),
-                        const Text('• Proyectos_Terreno', style: TextStyle(color: Color(0xFF38BDF8), fontSize: 11)),
-                      ],
-                    ),
+                  Expanded(
+                    child: Text('¡Sincronización Exitosa!', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
                   ),
                 ],
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(result.message, style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0F172A),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Row(
+                            children: [
+                              Icon(Icons.folder_shared_outlined, color: Color(0xFF10B981), size: 16),
+                              SizedBox(width: 6),
+                              Text('Carpeta Google Drive:', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                          const SizedBox(height: 2),
+                          const Text('• Vigilarte_Evidencias', style: TextStyle(color: Color(0xFF38BDF8), fontSize: 11)),
+                          const SizedBox(height: 8),
+                          const Row(
+                            children: [
+                              Icon(Icons.table_chart_outlined, color: Color(0xFF10B981), size: 16),
+                              SizedBox(width: 6),
+                              Text('Pestaña Google Sheets:', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                          const SizedBox(height: 2),
+                          const Text('• Proyectos_Terreno', style: TextStyle(color: Color(0xFF38BDF8), fontSize: 11)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
               actions: [
                 ElevatedButton(
@@ -412,8 +418,14 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
         }
       }
     } catch (e) {
+      if (isProgressDialogOpen) {
+        isProgressDialogOpen = false;
+        _syncStateSetter = null;
+        if (mounted && Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
+      }
       if (mounted) {
-        Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error al sincronizar con la nube: $e'), backgroundColor: Colors.red),
         );
@@ -1616,7 +1628,7 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
         ),
         const SizedBox(height: 10),
         Container(
-          height: 650,
+          height: 440,
           decoration: BoxDecoration(
             color: const Color(0xFF0F172A),
             borderRadius: BorderRadius.circular(12),
@@ -1838,12 +1850,16 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
           children: [
             Icon(icon, color: const Color(0xFF38BDF8), size: 18),
             const SizedBox(width: 8),
-            Text(
-              title,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.bold,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],
@@ -1882,28 +1898,6 @@ class _ProjectSummaryReportScreenState extends State<ProjectSummaryReportScreen>
       canChangeOrientation: false,
       canChangePageFormat: false,
       canDebug: false,
-      actions: [
-        PdfPreviewAction(
-          icon: const Icon(Icons.share),
-          onPressed: (context, build, pageFormat) async {
-            try {
-              await Printing.sharePdf(
-                bytes: pdfBytes,
-                filename: filename,
-              );
-            } catch (e) {
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Error al compartir archivo PDF: $e'),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-              }
-            }
-          },
-        ),
-      ],
     );
   }
 

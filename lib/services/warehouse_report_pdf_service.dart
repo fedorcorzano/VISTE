@@ -4,6 +4,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../models/session_evidence_model.dart';
 import 'catalog_visual_service.dart';
+import 'pdf_brand_helper.dart';
 
 class WarehouseReportPdfService {
   /// Descarga bytes de imagen de catálogo de forma segura con timeout
@@ -57,49 +58,12 @@ class WarehouseReportPdfService {
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.symmetric(horizontal: 32, vertical: 28),
         header: (pw.Context context) {
-          return pw.Container(
-            padding: const pw.EdgeInsets.only(bottom: 10),
-            decoration: const pw.BoxDecoration(
-              border: pw.Border(bottom: pw.BorderSide(color: accentColor, width: 2.2)),
-            ),
-            child: pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-              children: [
-                pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Text(
-                      'VIGILARTE - REPORTE DE ALMACEN Y PAÑOL DE HERRAMIENTAS',
-                      style: pw.TextStyle(
-                        color: primaryColor,
-                        fontSize: 12.5,
-                        fontWeight: pw.FontWeight.bold,
-                      ),
-                    ),
-                    pw.SizedBox(height: 2),
-                    pw.Text(
-                      'Ficha Técnica Visual para Despacho, Control Físico y Retorno de Equipos',
-                      style: const pw.TextStyle(color: PdfColors.grey700, fontSize: 8.5),
-                    ),
-                  ],
-                ),
-                pw.Container(
-                  padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: pw.BoxDecoration(
-                    color: const PdfColor.fromInt(0xFFF59E0B),
-                    borderRadius: pw.BorderRadius.circular(4),
-                  ),
-                  child: pw.Text(
-                    'USO ALMACÉN',
-                    style: pw.TextStyle(
-                      color: PdfColors.white,
-                      fontSize: 8.5,
-                      fontWeight: pw.FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+          return PdfBrandHelper.buildHeader(
+            title: 'REPORTE DE ALMACEN Y PAÑOL DE HERRAMIENTAS',
+            subtitle: 'Ficha Técnica Visual para Despacho, Control Físico y Retorno de Equipos',
+            badgeText: 'USO ALMACÉN',
+            badgeColor: const PdfColor.fromInt(0xFFF59E0B),
+            accentBorderColor: accentColor,
           );
         },
         footer: (pw.Context context) {

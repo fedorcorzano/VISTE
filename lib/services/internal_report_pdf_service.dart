@@ -3,6 +3,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../models/session_evidence_model.dart';
 import 'catalog_visual_service.dart';
+import 'pdf_brand_helper.dart';
 
 class InternalReportPdfService {
   /// Genera el documento PDF para uso interno (Cotizaciones, Compras y Almacén)
@@ -27,49 +28,12 @@ class InternalReportPdfService {
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(32),
         header: (pw.Context context) {
-          return pw.Container(
-            padding: const pw.EdgeInsets.only(bottom: 12),
-            decoration: const pw.BoxDecoration(
-              border: pw.Border(bottom: pw.BorderSide(color: accentColor, width: 2)),
-            ),
-            child: pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-              children: [
-                pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Text(
-                      'VIGILARTE - REPORTE INTERNO DE COMPRAS Y LOGISTICA',
-                      style: pw.TextStyle(
-                        color: primaryColor,
-                        fontSize: 14,
-                        fontWeight: pw.FontWeight.bold,
-                      ),
-                    ),
-                    pw.SizedBox(height: 2),
-                    pw.Text(
-                      'Lista de Materiales y Herramientas Priorizadas para Cotizacion en Obra',
-                      style: const pw.TextStyle(color: PdfColors.grey700, fontSize: 9),
-                    ),
-                  ],
-                ),
-                pw.Container(
-                  padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: pw.BoxDecoration(
-                    color: PdfColor.fromInt(0xFFEF4444),
-                    borderRadius: pw.BorderRadius.circular(4),
-                  ),
-                  child: pw.Text(
-                    'USO INTERNO',
-                    style: pw.TextStyle(
-                      color: PdfColors.white,
-                      fontSize: 9,
-                      fontWeight: pw.FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+          return PdfBrandHelper.buildHeader(
+            title: 'REPORTE INTERNO DE COMPRAS Y LOGISTICA',
+            subtitle: 'Lista de Materiales y Herramientas Priorizadas para Cotizacion en Obra',
+            badgeText: 'USO INTERNO',
+            badgeColor: const PdfColor.fromInt(0xFFEF4444),
+            accentBorderColor: accentColor,
           );
         },
         footer: (pw.Context context) {

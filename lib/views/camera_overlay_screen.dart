@@ -2480,10 +2480,10 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
     final initialDisplayMode = _overlayMode;
 
     try {
-      // 2.1 Asegurar que la imagen principal con PINES se capture en modo Pines
+      // 2.1 Asegurar que la imagen principal con PINES se capture en modo Pines (sin cotas)
       if (_overlayMode != OverlayDisplayMode.pines) {
         setState(() => _overlayMode = OverlayDisplayMode.pines);
-        await Future.delayed(const Duration(milliseconds: 40));
+        await Future.delayed(const Duration(milliseconds: 60));
       }
 
       ui.Image image = await boundary.toImage(pixelRatio: targetRatio);
@@ -2495,7 +2495,8 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
       }
       pngBytes = byteData.buffer.asUint8List();
       clientPngBytes = pngBytes; // Por defecto
-      measurementsPngBytes = pngBytes; // Guarda cotas y pines unificados (Req. 7)
+      measurementsPngBytes = null; // Exclusivo de medidas
+
       debugPrint(
         'Imagen con pines capturada: ${image.width} x ${image.height} (${(pngBytes.lengthInBytes / 1024).toStringAsFixed(1)} KB)',
       );
@@ -2516,7 +2517,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
           _isDraggingHandleA = false;
           _isDraggingHandleB = false;
         });
-        await Future.delayed(const Duration(milliseconds: 40));
+        await Future.delayed(const Duration(milliseconds: 60));
         ui.Image measImg = await boundary.toImage(pixelRatio: targetRatio);
         ByteData? measBd = await measImg.toByteData(
           format: ui.ImageByteFormat.png,
@@ -2529,37 +2530,30 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
         }
       }
 
-      // 2.3 Imagen exclusiva para Cliente (SOLO marcadores de seguridad SST)
+      // 2.3 Imagen exclusiva para Cliente (SOLO marcadores de seguridad SST, sin pines ni cotas)
       setState(() => _overlayMode = OverlayDisplayMode.pines);
       final allStickersBackup = List<PlacedSticker>.from(_placedStickers);
-      final hasNonSafety = _placedStickers.any(
-        (s) => s.sticker.category != StickerCategory.peligros,
-      );
-      if (hasNonSafety) {
-        setState(() {
-          _placedStickers.removeWhere(
-            (s) => s.sticker.category != StickerCategory.peligros,
-          );
-        });
-        await Future.delayed(const Duration(milliseconds: 30));
-        ui.Image clientImg = await boundary.toImage(pixelRatio: targetRatio);
-        ByteData? clientBd = await clientImg.toByteData(
-          format: ui.ImageByteFormat.png,
+      setState(() {
+        _placedStickers.removeWhere(
+          (s) => s.sticker.category != StickerCategory.peligros,
         );
-        if (clientBd != null) {
-          clientPngBytes = clientBd.buffer.asUint8List();
-          debugPrint(
-            'Imagen exclusiva de cliente SST capturada: ${clientImg.width} x ${clientImg.height}',
-          );
-        }
-        setState(() {
-          _placedStickers.clear();
-          _placedStickers.addAll(allStickersBackup);
-          _overlayMode = initialDisplayMode;
-        });
-      } else {
-        setState(() => _overlayMode = initialDisplayMode);
+      });
+      await Future.delayed(const Duration(milliseconds: 60));
+      ui.Image clientImg = await boundary.toImage(pixelRatio: targetRatio);
+      ByteData? clientBd = await clientImg.toByteData(
+        format: ui.ImageByteFormat.png,
+      );
+      if (clientBd != null) {
+        clientPngBytes = clientBd.buffer.asUint8List();
+        debugPrint(
+          'Imagen exclusiva de cliente SST capturada: ${clientImg.width} x ${clientImg.height}',
+        );
       }
+      setState(() {
+        _placedStickers.clear();
+        _placedStickers.addAll(allStickersBackup);
+        _overlayMode = initialDisplayMode;
+      });
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2741,13 +2735,15 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
       final String localFilePath = localFile.path;
       debugPrint('Imagen guardada localmente en: $localFilePath');
 
-      // Guardar también la imagen de cotas y pines técnicos
-      final String medidasFileName =
-          localFileName.replaceAll('.png', '_medidas.png');
-      final File medidasFile =
-          File('${designatedFolder.path}/$medidasFileName');
-      await medidasFile.writeAsBytes(measurementsPngBytes);
-      debugPrint('Imagen de cotas/medidas guardada en: ${medidasFile.path}');
+      // Guardar también la imagen de cotas y medidas (si existen)
+      if (measurementsPngBytes != null) {
+        final String medidasFileName =
+            localFileName.replaceAll('.png', '_medidas.png');
+        final File medidasFile =
+            File('${designatedFolder.path}/$medidasFileName');
+        await medidasFile.writeAsBytes(measurementsPngBytes);
+        debugPrint('Imagen de cotas/medidas guardada en: ${medidasFile.path}');
+      }
 
       // Guardar también la foto base limpia sin stickers/cotas para poder re-editar sin duplicar trazos
       if (_capturedImageBytes != null) {
@@ -3741,8 +3737,9 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                                     ),
                                   ),
 
-                                  // 1. Capa de Cotas Técnicas (dimensiones con cotas y flechas - Req. 7: siempre presentes)
-                                  if (_linearMeasurements.isNotEmpty || _cotaDragStart != null || _guidedOriginA != null)
+                                  // 1. Capa de Cotas Técnicas (dimensiones con cotas y flechas - Exclusivo de Modo Medidas)
+                                  if (_overlayMode == OverlayDisplayMode.medidas &&
+                                      (_linearMeasurements.isNotEmpty || _cotaDragStart != null || _guidedOriginA != null))
                                     CustomPaint(
                                       painter: MeasurementLinesPainter(
                                         measurements: _linearMeasurements,
@@ -3757,12 +3754,13 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
                                       ),
                                     ),
 
-                                  // 2. Capa de Pines Numerados (siempre presentes en la foto - Req. 7)
-                                  for (int i = 0; i < _placedStickers.length; i++)
-                                    _buildNumberedPin(_placedStickers[i], i),
+                                  // 2. Capa de Pines Numerados (Exclusivo de Modo Pines)
+                                  if (_overlayMode == OverlayDisplayMode.pines)
+                                    for (int i = 0; i < _placedStickers.length; i++)
+                                      _buildNumberedPin(_placedStickers[i], i),
 
-                                  // LEYENDA TRANSLÚCIDA (Visible tanto en Pines como en Medidas si hay elementos)
-                                  if (_placedStickers.isNotEmpty || _linearMeasurements.isNotEmpty)
+                                  // LEYENDA TRANSLÚCIDA (Visible solo en Modo Pines con pines colocados)
+                                  if (_overlayMode == OverlayDisplayMode.pines && _placedStickers.isNotEmpty)
                                     Positioned(
                                       bottom: 5,
                                       left: 5,
@@ -4836,7 +4834,9 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
               ),
               const SizedBox(width: 3),
               Text(
-                'PINES Y COTAS (${_placedStickers.length + _linearMeasurements.length})',
+                _overlayMode == OverlayDisplayMode.pines
+                    ? 'PINES (${_placedStickers.length})'
+                    : 'COTAS Y MEDIDAS (${_linearMeasurements.length})',
                 style: const TextStyle(
                   color: Color(0xFF38BDF8),
                   fontSize: 7.0,
@@ -4886,8 +4886,8 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
             ),
           ],
 
-          // 4. Medidas / Cotas (Flechas de ingeniería [1], [2]...)
-          if (_linearMeasurements.isNotEmpty) ...[
+          // 4. Medidas / Cotas (Solo en modo medidas, nunca en foto de pines)
+          if (_overlayMode == OverlayDisplayMode.medidas && _linearMeasurements.isNotEmpty) ...[
             if (sstPins.isNotEmpty || matPins.isNotEmpty || structPins.isNotEmpty)
               const SizedBox(height: 1.2),
             _buildInPhotoMeasurementsLegendRow(),

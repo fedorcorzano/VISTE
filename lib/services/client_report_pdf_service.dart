@@ -3,13 +3,14 @@ import 'package:http/http.dart' as http;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../models/session_evidence_model.dart';
+import 'pdf_brand_helper.dart';
 
 class ClientReportPdfService {
   /// Genera el reporte formal exclusivo para el cliente con:
   /// 1. Carátula ejecutiva con Logo VIGILARTE, Nombre del proyecto, Fecha,
-  ///    Persona a cargo de la visita y Mapa cuadrado satelital georreferenciado con pin.
+  ///    Persona a cargo de la visita y Mapa 2D georreferenciado con pin.
   /// 2. Resumen ejecutivo de condiciones de seguridad SST y Equipamiento cotizado.
-  /// 3. Evidencias fotográficas con SOLO marcadores de Seguridad / SST.
+  /// 3. Evidencias fotográficas con SOLO marcadores de Seguridad / SST (sin pines ni cotas).
   static Future<Uint8List> generatePdf(
     ProjectSessionModel session, {
     Uint8List? preloadedSatelliteMap,
@@ -22,7 +23,7 @@ class ClientReportPdfService {
     const lightBg = PdfColor.fromInt(0xFFF8FAFC);
     const borderGray = PdfColor.fromInt(0xFFE2E8F0);
 
-    // 0. Obtener mapa satelital para la carátula
+    // 0. Obtener mapa 2D para la carátula
     final coords = _parseCoordinates(session.project.mapa);
     Uint8List? satelliteMapBytes = preloadedSatelliteMap;
     if (satelliteMapBytes == null && coords != null) {
@@ -150,7 +151,7 @@ class ClientReportPdfService {
 
                 // Map Section Title
                 pw.Text(
-                  'UBICACION GEORREFERENCIADA DEL PROYECTO (MODO SATELITAL)',
+                  'UBICACION GEORREFERENCIADA DEL PROYECTO (MAPA 2D)',
                   style: pw.TextStyle(
                     color: const PdfColor.fromInt(0xFF0F172A),
                     fontSize: 8.5,
@@ -211,49 +212,11 @@ class ClientReportPdfService {
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(32),
         header: (pw.Context context) {
-          return pw.Container(
-            padding: const pw.EdgeInsets.only(bottom: 12),
-            decoration: const pw.BoxDecoration(
-              border: pw.Border(bottom: pw.BorderSide(color: accentColor, width: 2)),
-            ),
-            child: pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-              children: [
-                pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Text(
-                      'VIGILARTE - CONDICIONES DE SEGURIDAD SST Y EQUIPOS',
-                      style: pw.TextStyle(
-                        color: primaryColor,
-                        fontSize: 13,
-                        fontWeight: pw.FontWeight.bold,
-                      ),
-                    ),
-                    pw.SizedBox(height: 2),
-                    pw.Text(
-                      'Informe de Condiciones de Seguridad en Campo y Propuesta de Equipamiento',
-                      style: const pw.TextStyle(color: PdfColors.grey700, fontSize: 8.5),
-                    ),
-                  ],
-                ),
-                pw.Container(
-                  padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: pw.BoxDecoration(
-                    color: const PdfColor.fromInt(0xFF10B981),
-                    borderRadius: pw.BorderRadius.circular(4),
-                  ),
-                  child: pw.Text(
-                    'REPORTE CLIENTE',
-                    style: pw.TextStyle(
-                      color: PdfColors.white,
-                      fontSize: 8,
-                      fontWeight: pw.FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+          return PdfBrandHelper.buildHeader(
+            title: 'CONDICIONES DE SEGURIDAD SST Y EQUIPOS',
+            subtitle: 'Informe de Condiciones de Seguridad en Campo y Propuesta de Equipamiento',
+            badgeText: 'REPORTE CLIENTE',
+            badgeColor: const PdfColor.fromInt(0xFF10B981),
           );
         },
         footer: (pw.Context context) {
@@ -522,9 +485,13 @@ class ClientReportPdfService {
     );
 
     // 3. PÁGINAS DE FOTOGRAFÍAS EXCLUSIVAS PARA CLIENTE CON JERARQUÍA DE CONTROL DE RIESGOS
-    for (int i = 0; i < session.photos.length; i++) {
-      final photo = session.photos[i];
-      // USAR EXCLUSIVAMENTE clientImageBytes (con solo marcadores SST, sin herramientas ni materiales)
+    // Solo deben mostrarse las fotos con los peligros (Req. 5)
+    final sstPhotos = session.photos.where((p) => p.peligros.isNotEmpty).toList();
+    final photosToDisplay = sstPhotos.isNotEmpty ? sstPhotos : session.photos;
+
+    for (int i = 0; i < photosToDisplay.length; i++) {
+      final photo = photosToDisplay[i];
+      // USAR EXCLUSIVAMENTE clientImageBytes (con solo marcadores SST, sin herramientas ni materiales ni cotas)
       final imageProvider = pw.MemoryImage(photo.clientImageBytes);
 
       pdf.addPage(
@@ -535,17 +502,25 @@ class ClientReportPdfService {
             return pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
-                // Encabezado de Sección 3
+                // Encabezado de Sección 3 con Logo VIGILARTE
                 pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: pw.CrossAxisAlignment.center,
                   children: [
-                    pw.Text(
-                      '3. JERARQUÍA DE CONTROL DE RIESGOS Y EVIDENCIA #${photo.photoNumber}',
-                      style: pw.TextStyle(
-                        color: primaryColor,
-                        fontSize: 10,
-                        fontWeight: pw.FontWeight.bold,
-                      ),
+                    pw.Row(
+                      mainAxisSize: pw.MainAxisSize.min,
+                      children: [
+                        PdfBrandHelper.buildLogo(size: 20, showSubtitle: false),
+                        pw.SizedBox(width: 8),
+                        pw.Text(
+                          '3. JERARQUÍA DE CONTROL DE RIESGOS Y EVIDENCIA #${photo.photoNumber}',
+                          style: pw.TextStyle(
+                            color: primaryColor,
+                            fontSize: 10,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                      ],
                     ),
                     pw.Text(
                       'SECTOR: ${photo.areaSector.toUpperCase()}',
@@ -842,7 +817,7 @@ class ClientReportPdfService {
     return null;
   }
 
-  /// Descarga imagen satelital ArcGIS World Imagery centrada en el proyecto en formato ancho panorámico
+  /// Descarga imagen 2D ArcGIS World Street Map centrada en el proyecto en formato ancho panorámico
   static Future<Uint8List?> _fetchSatelliteMap(double lat, double lng) async {
     try {
       const deltaLon = 0.0060; // Zoom horizontal amplio
@@ -853,7 +828,7 @@ class ClientReportPdfService {
       final maxLat = lat + deltaLat;
 
       final url =
-          'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export'
+          'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/export'
           '?bbox=$minLon,$minLat,$maxLon,$maxLat&bboxSR=4326&imageSR=4326&size=800,380&format=jpg&f=image';
 
       final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 5));
@@ -861,7 +836,7 @@ class ClientReportPdfService {
         return response.bodyBytes;
       }
     } catch (_) {
-      // Fallback a gráfico vectorial satelital si se encuentra sin conexión o timeout
+      // Fallback a gráfico vectorial 2D si se encuentra sin conexión o timeout
     }
     return null;
   }
@@ -1027,7 +1002,7 @@ class ClientReportPdfService {
                   ),
                   pw.SizedBox(width: 4),
                   pw.Text(
-                    'MODO SATELITAL',
+                    'MAPA 2D',
                     style: pw.TextStyle(
                       color: PdfColors.white,
                       fontSize: 6.5,
@@ -1140,7 +1115,7 @@ class ClientReportPdfService {
                     ),
                   ),
                   pw.Text(
-                    'ARCGIS IMAGERY HD',
+                    'ARCGIS STREETS 2D',
                     style: const pw.TextStyle(
                       color: PdfColor.fromInt(0xFF38BDF8),
                       fontSize: 5.5,
@@ -1165,7 +1140,7 @@ class ClientReportPdfService {
           mainAxisAlignment: pw.MainAxisAlignment.center,
           children: [
             pw.Text(
-              '[ MODO SATELITAL ]',
+              '[ MAPA 2D ]',
               style: pw.TextStyle(
                 color: const PdfColor.fromInt(0xFF38BDF8),
                 fontSize: 8.5,

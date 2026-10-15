@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../models/session_evidence_model.dart';
+import 'pdf_brand_helper.dart';
 
 /// Servicio de generación del informe IPERC formal en PDF (Fase 2 - Proyecto Aceptado / Ejecución de Obra)
 /// Estructurado según Ley N° 29783, D.S. 005-2012-TR y Norma Técnica G.050
@@ -22,49 +23,12 @@ class IpercReportPdfService {
         pageFormat: PdfPageFormat.a4.landscape,
         margin: const pw.EdgeInsets.all(24),
         header: (context) {
-          return pw.Container(
-            margin: const pw.EdgeInsets.only(bottom: 12),
-            padding: const pw.EdgeInsets.only(bottom: 8),
-            decoration: const pw.BoxDecoration(
-              border: pw.Border(bottom: pw.BorderSide(color: navyColor, width: 2)),
-            ),
-            child: pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-              children: [
-                pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Text(
-                      'VIGILARTE INGENIERÍA SAC - MATRIZ IPERC CONTINUO',
-                      style: pw.TextStyle(
-                        color: navyColor,
-                        fontSize: 14,
-                        fontWeight: pw.FontWeight.bold,
-                      ),
-                    ),
-                    pw.Text(
-                      'Identificación de Peligros, Evaluación de Riesgos y Medidas de Control (Ley 29783 / G.050)',
-                      style: const pw.TextStyle(color: PdfColors.grey700, fontSize: 9),
-                    ),
-                  ],
-                ),
-                pw.Container(
-                  padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: pw.BoxDecoration(
-                    color: yellowColor,
-                    borderRadius: pw.BorderRadius.circular(4),
-                  ),
-                  child: pw.Text(
-                    'DOCUMENTO SST OBLIGATORIO',
-                    style: pw.TextStyle(
-                      color: navyColor,
-                      fontSize: 8,
-                      fontWeight: pw.FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+          return PdfBrandHelper.buildHeader(
+            title: 'MATRIZ IPERC CONTINUO (LEY 29783 / NORMA G.050)',
+            subtitle: 'Identificación de Peligros, Evaluación de Riesgos y Medidas de Control Operacional',
+            badgeText: 'DOCUMENTO SST OBLIGATORIO',
+            badgeColor: yellowColor,
+            accentBorderColor: navyColor,
           );
         },
         build: (context) {

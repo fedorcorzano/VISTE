@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../models/session_evidence_model.dart';
+import 'pdf_brand_helper.dart';
 
 class ProjectManagerReportPdfService {
   /// Genera el reporte técnico integral para el Gestor de Proyectos de VIGILARTE
@@ -23,49 +24,11 @@ class ProjectManagerReportPdfService {
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(32),
         header: (pw.Context context) {
-          return pw.Container(
-            padding: const pw.EdgeInsets.only(bottom: 12),
-            decoration: const pw.BoxDecoration(
-              border: pw.Border(bottom: pw.BorderSide(color: accentColor, width: 2)),
-            ),
-            child: pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-              children: [
-                pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Text(
-                      'VIGILARTE - REPORTE DE GESTOR DE PROYECTOS (METADATA)',
-                      style: pw.TextStyle(
-                        color: primaryColor,
-                        fontSize: 13,
-                        fontWeight: pw.FontWeight.bold,
-                      ),
-                    ),
-                    pw.SizedBox(height: 2),
-                    pw.Text(
-                      'Informe Tecnico Integral de Obra, Canalizaciones y Validacion de Campo',
-                      style: const pw.TextStyle(color: PdfColors.grey700, fontSize: 8.5),
-                    ),
-                  ],
-                ),
-                pw.Container(
-                  padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: pw.BoxDecoration(
-                    color: const PdfColor.fromInt(0xFF0284C7),
-                    borderRadius: pw.BorderRadius.circular(4),
-                  ),
-                  child: pw.Text(
-                    'GESTOR PROYECTO',
-                    style: pw.TextStyle(
-                      color: PdfColors.white,
-                      fontSize: 8,
-                      fontWeight: pw.FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+          return PdfBrandHelper.buildHeader(
+            title: 'REPORTE DE GESTOR DE PROYECTOS (METADATA)',
+            subtitle: 'Informe Tecnico Integral de Obra, Canalizaciones y Validacion de Campo',
+            badgeText: 'GESTOR PROYECTO',
+            badgeColor: const PdfColor.fromInt(0xFF0284C7),
           );
         },
         footer: (pw.Context context) {
@@ -431,14 +394,22 @@ class ProjectManagerReportPdfService {
               children: [
                 pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: pw.CrossAxisAlignment.center,
                   children: [
-                    pw.Text(
-                      'EVIDENCIA #${photo.photoNumber} (METADATA Y PINES) - ${photo.areaSector.toUpperCase()}',
-                      style: pw.TextStyle(
-                        color: primaryColor,
-                        fontSize: 10.5,
-                        fontWeight: pw.FontWeight.bold,
-                      ),
+                    pw.Row(
+                      mainAxisSize: pw.MainAxisSize.min,
+                      children: [
+                        PdfBrandHelper.buildLogo(size: 20, showSubtitle: false),
+                        pw.SizedBox(width: 8),
+                        pw.Text(
+                          'EVIDENCIA #${photo.photoNumber} (PINES CON LEYENDA) - ${photo.areaSector.toUpperCase()}',
+                          style: pw.TextStyle(
+                            color: primaryColor,
+                            fontSize: 10,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                      ],
                     ),
                     pw.Text(
                       'Proyecto: ${session.project.proyecto}',
@@ -520,14 +491,22 @@ class ProjectManagerReportPdfService {
                 children: [
                   pw.Row(
                     mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: pw.CrossAxisAlignment.center,
                     children: [
-                      pw.Text(
-                        'EVIDENCIA #${photo.photoNumber} (COTAS Y MEDIDAS LINEALES) - ${photo.areaSector.toUpperCase()}',
-                        style: pw.TextStyle(
-                          color: const PdfColor.fromInt(0xFF0D9488), // Teal 600
-                          fontSize: 10.5,
-                          fontWeight: pw.FontWeight.bold,
-                        ),
+                      pw.Row(
+                        mainAxisSize: pw.MainAxisSize.min,
+                        children: [
+                          PdfBrandHelper.buildLogo(size: 20, showSubtitle: false),
+                          pw.SizedBox(width: 8),
+                          pw.Text(
+                            'EVIDENCIA #${photo.photoNumber} (COTAS SIN PINES) - ${photo.areaSector.toUpperCase()}',
+                            style: pw.TextStyle(
+                              color: const PdfColor.fromInt(0xFF0D9488), // Teal 600
+                              fontSize: 10,
+                              fontWeight: pw.FontWeight.bold,
+                            ),
+                          ),
+                        ],
                       ),
                       pw.Text(
                         'Proyecto: ${session.project.proyecto}',
