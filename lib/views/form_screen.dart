@@ -231,7 +231,7 @@ class _FormScreenState extends State<FormScreen> {
             child: SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(parent: ClampingScrollPhysics()),
               keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-              padding: const EdgeInsets.fromLTRB(14.0, 12.0, 14.0, 24.0),
+              padding: const EdgeInsets.fromLTRB(16.0, 14.0, 16.0, 28.0),
               child: Form(
                 key: _formKey,
                 child: Column(
@@ -248,7 +248,7 @@ class _FormScreenState extends State<FormScreen> {
                               ? 'El nombre o contacto es obligatorio'
                               : null,
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 16),
 
                     // 2. Campo Dirección
                     _buildTextField(
@@ -257,7 +257,7 @@ class _FormScreenState extends State<FormScreen> {
                       hint: 'Ej. Av. Javier Prado Este 1234',
                       icon: Icons.location_on_outlined,
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 16),
 
                     // 3. Campo Celular (en fila independiente)
                     _buildTextField(
@@ -267,7 +267,7 @@ class _FormScreenState extends State<FormScreen> {
                       icon: Icons.phone_android_outlined,
                       keyboardType: TextInputType.phone,
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 16),
 
                     // 4. Campo Correo (en fila independiente para correos largos)
                     _buildTextField(
@@ -277,7 +277,7 @@ class _FormScreenState extends State<FormScreen> {
                       icon: Icons.alternate_email_outlined,
                       keyboardType: TextInputType.emailAddress,
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 16),
 
                     // 5. Responsable Técnico
                     _buildTextField(
@@ -290,15 +290,15 @@ class _FormScreenState extends State<FormScreen> {
                               ? 'El responsable es obligatorio'
                               : null,
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 16),
 
                     // 6. Clasificación del Proyecto (Iconos en fila bien espaciada)
                     _buildClasificacionSelector(),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 16),
 
                     // 7. Dropdown Proyecto desde Excel
                     _buildProjectDropdown(),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 16),
 
                     // 8. Mapa 2D Interactivo: Del mismo ancho que los cuadros de texto y altura compacta
                     _buildInteractive2DMap(),
@@ -314,8 +314,8 @@ class _FormScreenState extends State<FormScreen> {
 
   Widget _buildClasificacionSelector() {
     return Container(
-      height: 38,
-      padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 8),
+      height: 44,
+      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
       decoration: BoxDecoration(
         color: const Color(0xFF1E293B),
         borderRadius: BorderRadius.circular(8),
@@ -352,7 +352,7 @@ class _FormScreenState extends State<FormScreen> {
               borderRadius: BorderRadius.circular(6),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                 decoration: BoxDecoration(
                   color: isSelected ? const Color(0xFF38BDF8) : Colors.transparent,
                   borderRadius: BorderRadius.circular(6),
@@ -372,7 +372,7 @@ class _FormScreenState extends State<FormScreen> {
 
   Widget _buildProjectDropdown() {
     return Container(
-      height: 40,
+      height: 44,
       padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
         color: const Color(0xFF1E293B),
@@ -470,7 +470,7 @@ class _FormScreenState extends State<FormScreen> {
         filled: true,
         fillColor: const Color(0xFF1E293B),
         isDense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
           borderSide: const BorderSide(color: Color(0xFF334155), width: 1),
@@ -498,7 +498,7 @@ class _FormScreenState extends State<FormScreen> {
     );
 
     return Container(
-      height: 220,
+      height: 320,
       width: double.infinity,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
