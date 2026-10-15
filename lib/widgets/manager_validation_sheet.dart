@@ -44,6 +44,9 @@ class _ManagerValidationSheetState extends State<ManagerValidationSheet>
   late Set<String> _tempExcludedMaterials;
   late Set<String> _tempExcludedAccessories;
 
+  late Map<int, String> _tempTechnicalStatus;
+  late Map<int, TextEditingController> _obsControllers;
+
   late TextEditingController _elimCtrl;
   late TextEditingController _sustCtrl;
   late TextEditingController _ingCtrl;
@@ -53,10 +56,18 @@ class _ManagerValidationSheetState extends State<ManagerValidationSheet>
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 3, vsync: this);
+    _tabCtrl = TabController(length: 4, vsync: this);
     _tempExcludedTools = Set<String>.from(widget.session.excludedTools);
     _tempExcludedMaterials = Set<String>.from(widget.session.excludedMaterials);
     _tempExcludedAccessories = Set<String>.from(widget.session.excludedAccessories);
+
+    _tempTechnicalStatus = {};
+    _obsControllers = {};
+    for (int i = 0; i < widget.session.photos.length; i++) {
+      final p = widget.session.photos[i];
+      _tempTechnicalStatus[i] = p.effectiveTechnicalStatus;
+      _obsControllers[i] = TextEditingController(text: p.technicalObservation ?? '');
+    }
 
     _elimCtrl = TextEditingController(
       text: widget.session.getHierarchyResponsible('eliminacion', 'Cliente / Mantenimiento'),
@@ -78,6 +89,9 @@ class _ManagerValidationSheetState extends State<ManagerValidationSheet>
   @override
   void dispose() {
     _tabCtrl.dispose();
+    for (final c in _obsControllers.values) {
+      c.dispose();
+    }
     _elimCtrl.dispose();
     _sustCtrl.dispose();
     _ingCtrl.dispose();
@@ -101,6 +115,16 @@ class _ManagerValidationSheetState extends State<ManagerValidationSheet>
     widget.session.customHierarchyResponsibles['ingenieria'] = _ingCtrl.text.trim();
     widget.session.customHierarchyResponsibles['administracion'] = _admCtrl.text.trim();
     widget.session.customHierarchyResponsibles['epp'] = _eppCtrl.text.trim();
+
+    for (int i = 0; i < widget.session.photos.length; i++) {
+      final p = widget.session.photos[i];
+      final status = _tempTechnicalStatus[i];
+      final obs = _obsControllers[i]?.text.trim();
+      widget.session.photos[i] = p.copyWith(
+        technicalStatus: status,
+        technicalObservation: obs != null && obs.isNotEmpty ? obs : null,
+      );
+    }
 
     widget.onSaved();
 
@@ -195,6 +219,7 @@ class _ManagerValidationSheetState extends State<ManagerValidationSheet>
                 Tab(text: 'Herramientas ($activeToolsCount/${allTools.length})'),
                 Tab(text: 'Materiales (${activeMatsCount + activeAccCount})'),
                 Tab(text: 'Responsables SST'),
+                Tab(text: 'Estado Técnico (${widget.session.photos.length})'),
               ],
             ),
 
@@ -206,6 +231,7 @@ class _ManagerValidationSheetState extends State<ManagerValidationSheet>
                   _buildToolsTab(allTools),
                   _buildMaterialsTab(allMaterials, allAccessories),
                   _buildSstTab(),
+                  _buildTechnicalStatusTab(),
                 ],
               ),
             ),
@@ -615,6 +641,274 @@ class _ManagerValidationSheetState extends State<ManagerValidationSheet>
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildTechnicalStatusTab() {
+    if (widget.session.photos.isEmpty) {
+      return const Center(
+        child: Text('No hay sectores o fotos registradas en el proyecto.', style: TextStyle(color: Colors.white60)),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: widget.session.photos.length,
+      itemBuilder: (context, idx) {
+        final photo = widget.session.photos[idx];
+        final currentSelected = _tempTechnicalStatus[idx] ?? photo.effectiveTechnicalStatus;
+        final obsCtrl = _obsControllers[idx]!;
+
+        // Determinar estado sugerido por peligros
+        final autoStatus = photo.effectiveTechnicalStatus;
+        final Color autoColor;
+        final String autoLabel;
+        if (autoStatus == 'no_apto') {
+          autoColor = const Color(0xFFEF4444);
+          autoLabel = 'No Apto (Riesgo crítico detectado)';
+        } else if (autoStatus == 'condicionado') {
+          autoColor = const Color(0xFFF59E0B);
+          autoLabel = 'Apto Condicionado (Riesgos moderados)';
+        } else {
+          autoColor = const Color(0xFF10B981);
+          autoLabel = 'Apto para Instalación';
+        }
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0F172A),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: currentSelected == 'no_apto'
+                  ? const Color(0xFFEF4444).withValues(alpha: 0.6)
+                  : currentSelected == 'condicionado'
+                      ? const Color(0xFFF59E0B).withValues(alpha: 0.6)
+                      : const Color(0xFF10B981).withValues(alpha: 0.6),
+              width: 1.2,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Encabezado del sector
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF38BDF8).withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      'Foto #${photo.photoNumber}',
+                      style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 11, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      photo.areaSector.isNotEmpty ? photo.areaSector : 'Sector sin definir',
+                      style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+
+              // Información de deducción automática
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E293B),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.auto_awesome, color: autoColor, size: 14),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Cálculo SST: $autoLabel',
+                        style: TextStyle(color: autoColor, fontSize: 11, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              if (photo.peligros.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Padding(
+                  padding: const EdgeInsets.only(left: 4),
+                  child: Text(
+                    'Peligros identificados: ${photo.peligros.join(', ')}',
+                    style: const TextStyle(color: Colors.white60, fontSize: 10.5),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 12),
+
+              // Selector interactivo de Estado Técnico
+              const Text(
+                'Definir Estado Técnico para el Cliente:',
+                style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  // Botón Apto
+                  Expanded(
+                    child: InkWell(
+                      onTap: () {
+                        setState(() => _tempTechnicalStatus[idx] = 'apto');
+                      },
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        decoration: BoxDecoration(
+                          color: currentSelected == 'apto'
+                              ? const Color(0xFF10B981)
+                              : const Color(0xFF1E293B),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: currentSelected == 'apto' ? Colors.transparent : Colors.white24,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.check_circle_outline,
+                              color: currentSelected == 'apto' ? Colors.white : Colors.white54,
+                              size: 14,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Apto',
+                              style: TextStyle(
+                                color: currentSelected == 'apto' ? Colors.white : Colors.white70,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+
+                  // Botón Condicionado
+                  Expanded(
+                    child: InkWell(
+                      onTap: () {
+                        setState(() => _tempTechnicalStatus[idx] = 'condicionado');
+                      },
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        decoration: BoxDecoration(
+                          color: currentSelected == 'condicionado'
+                              ? const Color(0xFFF59E0B)
+                              : const Color(0xFF1E293B),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: currentSelected == 'condicionado' ? Colors.transparent : Colors.white24,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.warning_amber_rounded,
+                              color: currentSelected == 'condicionado' ? Colors.white : Colors.white54,
+                              size: 14,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Condicionado',
+                              style: TextStyle(
+                                color: currentSelected == 'condicionado' ? Colors.white : Colors.white70,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+
+                  // Botón No Apto
+                  Expanded(
+                    child: InkWell(
+                      onTap: () {
+                        setState(() => _tempTechnicalStatus[idx] = 'no_apto');
+                      },
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        decoration: BoxDecoration(
+                          color: currentSelected == 'no_apto'
+                              ? const Color(0xFFEF4444)
+                              : const Color(0xFF1E293B),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: currentSelected == 'no_apto' ? Colors.transparent : Colors.white24,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.cancel_outlined,
+                              color: currentSelected == 'no_apto' ? Colors.white : Colors.white54,
+                              size: 14,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'No Apto',
+                              style: TextStyle(
+                                color: currentSelected == 'no_apto' ? Colors.white : Colors.white70,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+
+              // Campo de observación técnica opcional
+              TextField(
+                controller: obsCtrl,
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+                decoration: InputDecoration(
+                  labelText: 'Observación / Condicionamiento técnico para el cliente',
+                  labelStyle: const TextStyle(color: Colors.white60, fontSize: 10.5),
+                  filled: true,
+                  fillColor: const Color(0xFF1E293B),
+                  isDense: true,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

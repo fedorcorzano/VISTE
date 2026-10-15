@@ -58,6 +58,8 @@ class SessionEvidenceRecord {
   final List<String> accesorios;
   final Map<String, String> photoHierarchyResponsibility;
   final Map<String, String> photoHierarchyControls;
+  final String? technicalStatus; // 'apto' | 'condicionado' | 'no_apto' (o null para cálculo automático)
+  final String? technicalObservation; // Observación personalizada para el reporte del cliente
   final DateTime timestamp;
 
   const SessionEvidenceRecord({
@@ -77,6 +79,8 @@ class SessionEvidenceRecord {
     required this.accesorios,
     this.photoHierarchyResponsibility = const {},
     this.photoHierarchyControls = const {},
+    this.technicalStatus,
+    this.technicalObservation,
     required this.timestamp,
   });
 
@@ -86,6 +90,14 @@ class SessionEvidenceRecord {
       return cleanPngBytes!;
     }
     if (localImagePath.isNotEmpty) {
+      final rawPath = localImagePath.replaceAll('.png', '_raw.jpg');
+      final fRaw = File(rawPath);
+      if (fRaw.existsSync()) {
+        try {
+          final b = fRaw.readAsBytesSync();
+          if (b.isNotEmpty) return b;
+        } catch (_) {}
+      }
       final f = File(localImagePath);
       if (f.existsSync()) {
         try {
@@ -97,11 +109,40 @@ class SessionEvidenceRecord {
     return pngBytes;
   }
 
-  /// Retorna la imagen adecuada para el cliente (con solo marcadores SST) o fallback a la completa
-  Uint8List get clientImageBytes => clientPngBytes ?? pngBytes;
+  /// Retorna la imagen adecuada para el cliente (con solo marcadores SST) o fallback a la limpia/completa
+  Uint8List get clientImageBytes {
+    if (clientPngBytes != null && clientPngBytes!.isNotEmpty) {
+      return clientPngBytes!;
+    }
+    if (peligros.isEmpty) {
+      return baseImageBytes;
+    }
+    return pngBytes;
+  }
 
   /// Retorna la imagen con cotas o null si no tiene medidas
   Uint8List? get measurementsImageBytes => measurementsPngBytes;
+
+  /// Retorna el estado técnico del sector ('apto', 'condicionado' o 'no_apto')
+  /// Resuelve la combinación entre la selección manual del usuario/gestor y el cálculo automático SST
+  String get effectiveTechnicalStatus {
+    if (technicalStatus != null && technicalStatus!.isNotEmpty) {
+      return technicalStatus!;
+    }
+    final text = peligros.join(' ').toLowerCase();
+    final bool hasCritical = text.contains('eléctric') ||
+        text.contains('electric') ||
+        text.contains('confinado') ||
+        text.contains('colapso') ||
+        text.contains('inestabl') ||
+        text.contains('tensión') ||
+        text.contains('tension') ||
+        text.contains('gas') ||
+        text.contains('químic');
+    if (hasCritical) return 'no_apto';
+    if (peligros.isNotEmpty) return 'condicionado';
+    return 'apto';
+  }
 
   /// Retorna la entidad responsable de un nivel de control ('VIGILARTE' o 'CLIENTE')
   String getResponsibility(String levelKey) {
@@ -138,6 +179,8 @@ class SessionEvidenceRecord {
     List<String>? accesorios,
     Map<String, String>? photoHierarchyResponsibility,
     Map<String, String>? photoHierarchyControls,
+    String? technicalStatus,
+    String? technicalObservation,
     DateTime? timestamp,
   }) {
     return SessionEvidenceRecord(
@@ -159,6 +202,8 @@ class SessionEvidenceRecord {
           photoHierarchyResponsibility ?? this.photoHierarchyResponsibility,
       photoHierarchyControls:
           photoHierarchyControls ?? this.photoHierarchyControls,
+      technicalStatus: technicalStatus ?? this.technicalStatus,
+      technicalObservation: technicalObservation ?? this.technicalObservation,
       timestamp: timestamp ?? this.timestamp,
     );
   }
@@ -175,6 +220,8 @@ class SessionEvidenceRecord {
       'accesorios': accesorios,
       'photoHierarchyResponsibility': photoHierarchyResponsibility,
       'photoHierarchyControls': photoHierarchyControls,
+      'technicalStatus': technicalStatus,
+      'technicalObservation': technicalObservation,
       'linearMeasurements': linearMeasurements.map((m) => m.toJson()).toList(),
       'placedPins': placedPins.map((p) => p.toJson()).toList(),
       'timestamp': timestamp.toIso8601String(),
@@ -184,6 +231,7 @@ class SessionEvidenceRecord {
   factory SessionEvidenceRecord.fromJson(Map<String, dynamic> json) {
     final String imagePath = json['localImagePath'] as String? ?? '';
     Uint8List loadedBytes = Uint8List(0);
+    Uint8List? loadedCleanBytes;
     Uint8List? loadedClientBytes;
     Uint8List? loadedMeasurementsBytes;
 
@@ -192,6 +240,13 @@ class SessionEvidenceRecord {
       if (file.existsSync()) {
         try {
           loadedBytes = file.readAsBytesSync();
+        } catch (_) {}
+      }
+      final rawPath = imagePath.replaceAll('.png', '_raw.jpg');
+      final rawFile = File(rawPath);
+      if (rawFile.existsSync()) {
+        try {
+          loadedCleanBytes = rawFile.readAsBytesSync();
         } catch (_) {}
       }
       final sstPath = imagePath.replaceAll('.png', '_sst.png');
@@ -231,6 +286,7 @@ class SessionEvidenceRecord {
       areaSector: json['areaSector'] as String? ?? '',
       localImagePath: imagePath,
       pngBytes: loadedBytes,
+      cleanPngBytes: loadedCleanBytes,
       clientPngBytes: loadedClientBytes,
       measurementsPngBytes: loadedMeasurementsBytes,
       linearMeasurements: parsedMeasurements,
@@ -242,6 +298,8 @@ class SessionEvidenceRecord {
       accesorios: (json['accesorios'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
       photoHierarchyResponsibility: photoResp,
       photoHierarchyControls: photoControls,
+      technicalStatus: json['technicalStatus'] as String?,
+      technicalObservation: json['technicalObservation'] as String?,
       timestamp: json['timestamp'] != null
           ? DateTime.tryParse(json['timestamp'] as String) ?? DateTime.now()
           : DateTime.now(),

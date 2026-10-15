@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -101,6 +102,17 @@ class _FieldPhotoCaptureScreenState extends State<FieldPhotoCaptureScreen> {
   String? _activeDragHandle; // 'A' o 'B' para reubicar puntas de cota
   Offset? _floatingPinMenuPos; // Posición de menú flotante contextual de pines al tocar la foto
   bool _showLegendPreview = true;
+  bool _isExportingForSave = false;
+  String? _exportMode; // null, 'pines', 'medidas', 'sst'
+
+  Future<void> _renderFrame() async {
+    final completer = Completer<void>();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      completer.complete();
+    });
+    await completer.future;
+    await Future.delayed(const Duration(milliseconds: 35));
+  }
 
   // Control de zoom continuo con dos dedos
   final TransformationController _transformationController = TransformationController();
@@ -333,18 +345,61 @@ class _FieldPhotoCaptureScreenState extends State<FieldPhotoCaptureScreen> {
       setState(() => _floatingPinMenuPos = null);
     }
 
-    Uint8List finalPng = currentRecord.pngBytes;
-    try {
-      final RenderRepaintBoundary? boundary =
-          _repaintBoundaryKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
-      if (boundary != null) {
-        final ui.Image image = await boundary.toImage(pixelRatio: 1.5);
-        final ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-        if (byteData != null) {
-          finalPng = byteData.buffer.asUint8List();
+    Uint8List pngBytes = currentRecord.pngBytes;
+    Uint8List? measurementsPngBytes;
+    Uint8List? clientPngBytes;
+
+    final RenderRepaintBoundary? boundary =
+        _repaintBoundaryKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+
+    if (boundary != null) {
+      try {
+        // 1. Captura de Pines con Leyenda (sin cotas)
+        setState(() {
+          _isExportingForSave = true;
+          _exportMode = 'pines';
+        });
+        await _renderFrame();
+        final ui.Image imgPines = await boundary.toImage(pixelRatio: 1.5);
+        final ByteData? bdPines = await imgPines.toByteData(format: ui.ImageByteFormat.png);
+        if (bdPines != null) {
+          pngBytes = bdPines.buffer.asUint8List();
+        }
+
+        // 2. Si hay cotas/medidas trazadas, captura exclusiva de Cotas Técnicas (sin pines)
+        if (_activeMeasurements.isNotEmpty) {
+          setState(() {
+            _exportMode = 'medidas';
+          });
+          await _renderFrame();
+          final ui.Image imgMeas = await boundary.toImage(pixelRatio: 1.5);
+          final ByteData? bdMeas = await imgMeas.toByteData(format: ui.ImageByteFormat.png);
+          if (bdMeas != null) {
+            measurementsPngBytes = bdMeas.buffer.asUint8List();
+          }
+        }
+
+        // 3. Captura exclusiva para Cliente SST (solo riesgos SST, sin cotas ni materiales/estructuras)
+        setState(() {
+          _exportMode = 'sst';
+        });
+        await _renderFrame();
+        final ui.Image imgSst = await boundary.toImage(pixelRatio: 1.5);
+        final ByteData? bdSst = await imgSst.toByteData(format: ui.ImageByteFormat.png);
+        if (bdSst != null) {
+          clientPngBytes = bdSst.buffer.asUint8List();
+        }
+      } catch (e) {
+        debugPrint('Error exportando fotos excluyentes en campo: $e');
+      } finally {
+        if (mounted) {
+          setState(() {
+            _exportMode = null;
+            _isExportingForSave = false;
+          });
         }
       }
-    } catch (_) {}
+    }
 
     // Extraer materiales de pines y cotas
     final cotaMaterials = _activeMeasurements
@@ -354,13 +409,16 @@ class _FieldPhotoCaptureScreenState extends State<FieldPhotoCaptureScreen> {
         .where((p) => p.sticker.category == StickerCategory.materiales)
         .map((p) => p.sticker.title);
 
-    final updatedRecord = SessionEvidenceRecord(
+    final cleanPhotoBytes = currentRecord.cleanPngBytes ?? _activeImageBytes ?? currentRecord.baseImageBytes;
+
+    final updatedRecord = currentRecord.copyWith(
       photoNumber: currentRecord.photoNumber,
       areaSector: areaName,
       localImagePath: currentRecord.localImagePath,
-      cleanPngBytes: currentRecord.cleanPngBytes ?? currentRecord.baseImageBytes,
-      pngBytes: finalPng,
-      measurementsPngBytes: _activeMeasurements.isNotEmpty ? finalPng : null,
+      cleanPngBytes: cleanPhotoBytes,
+      pngBytes: pngBytes,
+      measurementsPngBytes: measurementsPngBytes,
+      clientPngBytes: clientPngBytes ?? (_activePins.any((p) => p.sticker.category == StickerCategory.peligros) ? null : cleanPhotoBytes),
       linearMeasurements: List<LinearMeasurement>.from(_activeMeasurements),
       placedPins: List<PlacedSticker>.from(_activePins),
       estructuras: _activePins
@@ -372,8 +430,16 @@ class _FieldPhotoCaptureScreenState extends State<FieldPhotoCaptureScreen> {
           .where((p) => p.sticker.category == StickerCategory.peligros)
           .map((p) => p.sticker.title)
           .toList(),
-      herramientas: const [],
-      accesorios: const [],
+      herramientas: TechnicalCatalogMatrix.deduceHerramientas(
+        estructuras: _activePins
+            .where((p) => p.sticker.category == StickerCategory.estructuras)
+            .map((p) => p.sticker.title)
+            .toList(),
+        materiales: {...pinMaterials, ...cotaMaterials}.toList(),
+      ),
+      accesorios: TechnicalCatalogMatrix.deduceAccesorios(
+        materiales: {...pinMaterials, ...cotaMaterials}.toList(),
+      ),
       timestamp: currentRecord.timestamp,
     );
 
@@ -1697,49 +1763,58 @@ class _FieldPhotoCaptureScreenState extends State<FieldPhotoCaptureScreen> {
                               // Imagen de fondo
                               Image.memory(_activeImageBytes!, fit: BoxFit.contain),
 
-                              // Dibujo de cotas lineales
-                              CustomPaint(
-                                size: canvasSize,
-                                painter: MeasurementLinesPainter(
-                                  measurements: _activeMeasurements,
-                                  selectedMeasurementId: _selectedMeasurementId,
-                                  guidedOriginA: _guidedOriginA,
-                                  currentEnd: _guidedTargetB,
-                                ),
-                              ),
-
-                              // Pines interactivos colocados sobre la foto (Req. 4)
-                              ..._activePins.asMap().entries.map((entry) {
-                                final pin = entry.value;
-                                final catNum = _getCategoryPinNumber(pin);
-
-                                return Positioned(
-                                  left: pin.position.dx - 18,
-                                  top: pin.position.dy - 18,
-                                  child: GestureDetector(
-                                    behavior: HitTestBehavior.opaque,
-                                    // Mover pin con arrastre de 1 dedo, con zona segura para evitar traslape con cinta inferior (Req. 2)
-                                    onPanUpdate: _isCotaDrawingMode
-                                        ? null
-                                        : (details) {
-                                            setState(() {
-                                              final newX = (pin.position.dx + details.delta.dx).clamp(16.0, canvasSize.width - 16.0);
-                                              final newY = (pin.position.dy + details.delta.dy).clamp(16.0, canvasSize.height - 50.0);
-                                              pin.position = Offset(newX, newY);
-                                            });
-                                          },
-                                    // Tocar pin: Menú contextual Cambiar o Eliminar (Req. 4)
-                                    onTap: _isCotaDrawingMode ? null : () => _showPinContextMenu(pin),
-                                    child: Container(
-                                      width: 36,
-                                      height: 36,
-                                      alignment: Alignment.center,
-                                      color: Colors.transparent,
-                                      child: _buildPinBadgeWidget(pin.sticker.category, catNum),
-                                    ),
+                              // Dibujo de cotas lineales (excluyente: visible en modo medidas o trazo interactivo, NUNCA en modo pines ni sst)
+                              if (_exportMode != 'pines' &&
+                                  _exportMode != 'sst' &&
+                                  (_exportMode == 'medidas' || _isCotaDrawingMode || _activeMeasurements.isNotEmpty))
+                                CustomPaint(
+                                  size: canvasSize,
+                                  painter: MeasurementLinesPainter(
+                                    measurements: _activeMeasurements,
+                                    selectedMeasurementId: _isExportingForSave ? null : _selectedMeasurementId,
+                                    guidedOriginA: _isExportingForSave ? null : _guidedOriginA,
+                                    currentEnd: _isExportingForSave ? null : _guidedTargetB,
                                   ),
-                                );
-                              }),
+                                ),
+
+                              // Pines interactivos colocados sobre la foto (excluyente: NUNCA en modo medidas)
+                              if (_exportMode != 'medidas')
+                                ..._activePins
+                                    .where((p) => _exportMode != 'sst' || p.sticker.category == StickerCategory.peligros)
+                                    .toList()
+                                    .asMap()
+                                    .entries
+                                    .map((entry) {
+                                  final pin = entry.value;
+                                  final catNum = _getCategoryPinNumber(pin);
+
+                                  return Positioned(
+                                    left: pin.position.dx - 18,
+                                    top: pin.position.dy - 18,
+                                    child: GestureDetector(
+                                      behavior: HitTestBehavior.opaque,
+                                      // Mover pin con arrastre de 1 dedo, con zona segura para evitar traslape con cinta inferior (Req. 2)
+                                      onPanUpdate: _isCotaDrawingMode
+                                          ? null
+                                          : (details) {
+                                              setState(() {
+                                                final newX = (pin.position.dx + details.delta.dx).clamp(16.0, canvasSize.width - 16.0);
+                                                final newY = (pin.position.dy + details.delta.dy).clamp(16.0, canvasSize.height - 50.0);
+                                                pin.position = Offset(newX, newY);
+                                              });
+                                            },
+                                      // Tocar pin: Menú contextual Cambiar o Eliminar (Req. 4)
+                                      onTap: _isCotaDrawingMode ? null : () => _showPinContextMenu(pin),
+                                      child: Container(
+                                        width: 36,
+                                        height: 36,
+                                        alignment: Alignment.center,
+                                        color: Colors.transparent,
+                                        child: _buildPinBadgeWidget(pin.sticker.category, catNum),
+                                      ),
+                                    ),
+                                  );
+                                }),
 
                               // Ficha técnica en esquina superior izquierda
                               Positioned(
@@ -1759,8 +1834,12 @@ class _FieldPhotoCaptureScreenState extends State<FieldPhotoCaptureScreen> {
                                 ),
                               ),
 
-                              // Cinta / Leyenda técnica ultra-compacta al pie (Req. 2: sin traslape)
-                              if (_showLegendPreview && (_activePins.isNotEmpty || _activeMeasurements.isNotEmpty))
+                              // Cinta / Leyenda técnica ultra-compacta al pie (excluyente: NUNCA en modo medidas)
+                              if (_exportMode != 'medidas' &&
+                                  _showLegendPreview &&
+                                  (_exportMode == 'sst'
+                                      ? _activePins.any((p) => p.sticker.category == StickerCategory.peligros)
+                                      : (_activePins.isNotEmpty || _activeMeasurements.isNotEmpty)))
                                 Positioned(
                                   bottom: 4,
                                   left: 6,
@@ -1769,7 +1848,7 @@ class _FieldPhotoCaptureScreenState extends State<FieldPhotoCaptureScreen> {
                                 ),
 
                               // Lupa de precisión al mover manijas o trazar
-                              if (_showLoupe && _loupeFocalPoint != null)
+                              if (!_isExportingForSave && _showLoupe && _loupeFocalPoint != null)
                                 LoupeMagnifierWidget(
                                   touchPosition: _loupeFocalPoint!,
                                   canvasSize: canvasSize,
@@ -1990,7 +2069,7 @@ class _FieldPhotoCaptureScreenState extends State<FieldPhotoCaptureScreen> {
                                 ),
 
                               // Botones flotantes contextuales: Estructura, Material, Peligro SST
-                              if (_floatingPinMenuPos != null)
+                              if (!_isExportingForSave && _floatingPinMenuPos != null)
                                 _buildFloatingPinMenu(canvasSize),
                             ],
                           );
@@ -2335,6 +2414,18 @@ class _FieldPhotoCaptureScreenState extends State<FieldPhotoCaptureScreen> {
 
   /// Cinta ultra-compacta al pie de la imagen sin traslape con pines
   Widget _buildUltraCompactFooterTape() {
+    final String label;
+    if (_exportMode == 'sst') {
+      final sstCount = _activePins.where((p) => p.sticker.category == StickerCategory.peligros).length;
+      label = 'PELIGROS SST ($sstCount)';
+    } else if (_exportMode == 'pines') {
+      label = 'PINES TÉCNICOS (${_activePins.length})';
+    } else if (_exportMode == 'medidas') {
+      label = 'COTAS TÉCNICAS (${_activeMeasurements.length})';
+    } else {
+      label = 'PINES (${_activePins.length}) • COTAS (${_activeMeasurements.length})';
+    }
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
       decoration: BoxDecoration(
@@ -2347,7 +2438,7 @@ class _FieldPhotoCaptureScreenState extends State<FieldPhotoCaptureScreen> {
           const Icon(Icons.layers_outlined, color: Color(0xFF38BDF8), size: 10),
           const SizedBox(width: 4),
           Text(
-            'PINES (${_activePins.length}) • COTAS (${_activeMeasurements.length})',
+            label,
             style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 7.5, fontWeight: FontWeight.bold),
           ),
           const Spacer(),

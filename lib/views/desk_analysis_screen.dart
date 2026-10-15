@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -74,7 +75,17 @@ class _DeskAnalysisScreenState extends State<DeskAnalysisScreen> {
 
   // Control de exportación y leyenda no bloqueante
   bool _isExportingForSave = false;
+  String? _exportMode; // null, 'pines', 'medidas', 'sst'
   bool _showLegendPreview = true;
+
+  Future<void> _renderFrame() async {
+    final completer = Completer<void>();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      completer.complete();
+    });
+    await completer.future;
+    await Future.delayed(const Duration(milliseconds: 35));
+  }
 
   Map<String, List<String>> _catalogs = {};
 
@@ -183,34 +194,70 @@ class _DeskAnalysisScreenState extends State<DeskAnalysisScreen> {
 
     final accesorios = TechnicalCatalogMatrix.deduceAccesorios(materiales: materiales);
 
-    // Renderizar imagen compuesta actualizada con pines
+    // Renderizado limpio y secuencial de las tres modalidades excluyentes de imagen
     Uint8List finalPngBytes = currentRecord.pngBytes;
-    Uint8List? clientPngBytes = currentRecord.clientPngBytes;
-    Uint8List? measurementsPngBytes = currentRecord.measurementsPngBytes;
+    Uint8List? clientPngBytes;
+    Uint8List? measurementsPngBytes;
 
-    try {
-      setState(() => _isExportingForSave = true);
-      await Future.delayed(const Duration(milliseconds: 60));
-      final RenderRepaintBoundary? boundary =
-          _repaintBoundaryKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
-      if (boundary != null) {
-        final ui.Image image = await boundary.toImage(pixelRatio: 1.5);
-        final ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-        if (byteData != null) {
-          finalPngBytes = byteData.buffer.asUint8List();
+    final RenderRepaintBoundary? boundary =
+        _repaintBoundaryKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+
+    if (boundary != null) {
+      try {
+        // 1. Capturar Pines con Leyenda (sin cotas)
+        setState(() {
+          _isExportingForSave = true;
+          _exportMode = 'pines';
+        });
+        await _renderFrame();
+        final ui.Image imgPines = await boundary.toImage(pixelRatio: 1.5);
+        final ByteData? bdPines = await imgPines.toByteData(format: ui.ImageByteFormat.png);
+        if (bdPines != null) {
+          finalPngBytes = bdPines.buffer.asUint8List();
+        }
+
+        // 2. Si hay cotas/medidas trazadas, capturar Cotas Técnicas (sin pines)
+        if (_linearMeasurements.isNotEmpty) {
+          setState(() {
+            _exportMode = 'medidas';
+          });
+          await _renderFrame();
+          final ui.Image imgMeas = await boundary.toImage(pixelRatio: 1.5);
+          final ByteData? bdMeas = await imgMeas.toByteData(format: ui.ImageByteFormat.png);
+          if (bdMeas != null) {
+            measurementsPngBytes = bdMeas.buffer.asUint8List();
+          }
+        }
+
+        // 3. Capturar Cliente SST (solo riesgos SST, sin cotas ni materiales/estructuras)
+        setState(() {
+          _exportMode = 'sst';
+        });
+        await _renderFrame();
+        final ui.Image imgSst = await boundary.toImage(pixelRatio: 1.5);
+        final ByteData? bdSst = await imgSst.toByteData(format: ui.ImageByteFormat.png);
+        if (bdSst != null) {
+          clientPngBytes = bdSst.buffer.asUint8List();
+        }
+      } catch (e) {
+        debugPrint('Error exportando fotos en gabinete: $e');
+      } finally {
+        if (mounted) {
+          setState(() {
+            _exportMode = null;
+            _isExportingForSave = false;
+          });
         }
       }
-    } catch (e) {
-      debugPrint('Aviso en renderizado de foto: $e');
-    } finally {
-      if (mounted) setState(() => _isExportingForSave = false);
     }
 
+    final cleanPhotoBytes = currentRecord.cleanPngBytes ?? _currentImageBytes ?? currentRecord.baseImageBytes;
+
     final updatedRecord = currentRecord.copyWith(
-      cleanPngBytes: currentRecord.cleanPngBytes ?? currentRecord.baseImageBytes,
+      cleanPngBytes: cleanPhotoBytes,
       pngBytes: finalPngBytes,
-      clientPngBytes: clientPngBytes ?? finalPngBytes,
-      measurementsPngBytes: measurementsPngBytes ?? finalPngBytes,
+      clientPngBytes: clientPngBytes ?? (_placedPins.any((p) => p.sticker.category == StickerCategory.peligros) ? null : cleanPhotoBytes),
+      measurementsPngBytes: measurementsPngBytes,
       placedPins: List<PlacedSticker>.from(_placedPins),
       linearMeasurements: List<LinearMeasurement>.from(_linearMeasurements),
       estructuras: estructuras,
@@ -1606,15 +1653,19 @@ class _DeskAnalysisScreenState extends State<DeskAnalysisScreen> {
                         // 1. Imagen técnica base
                         Image.memory(_currentImageBytes!, fit: BoxFit.contain),
 
-                        // 2. Capa de Cotas (dimensiones con cotas y flechas - Req. 7)
-                        if (_linearMeasurements.isNotEmpty || _isDrawingCota)
+                        // 2. Capa de Cotas (dimensiones con cotas y flechas - excluyente de pines y sst)
+                        if (_exportMode != 'pines' &&
+                            _exportMode != 'sst' &&
+                            (_exportMode == 'medidas' ||
+                                (_exportMode == null && (_displayMode == DeskDisplayMode.medidas || _isDrawingCota))) &&
+                            (_linearMeasurements.isNotEmpty || _isDrawingCota))
                           CustomPaint(
                             size: canvasSize,
                             painter: MeasurementLinesPainter(
                               measurements: _linearMeasurements,
                               selectedMeasurementId: _isExportingForSave ? null : _selectedMeasurementId,
-                              guidedOriginA: _guidedOriginA,
-                              currentEnd: _guidedTargetB,
+                              guidedOriginA: _isExportingForSave ? null : _guidedOriginA,
+                              currentEnd: _isExportingForSave ? null : _guidedTargetB,
                             ),
                           ),
 
@@ -1849,38 +1900,44 @@ class _DeskAnalysisScreenState extends State<DeskAnalysisScreen> {
                           ),
                         ),
 
-                        // 4. Capa de Pines Numerados Interactivos (siempre visibles en la foto - Req. 7)
-                        ..._placedPins.asMap().entries.map((entry) {
-                          final pin = entry.value;
-                          final catNum = _getCategoryPinNumber(pin);
+                        // 4. Capa de Pines Numerados Interactivos (excluyente: NUNCA en modo medidas)
+                        if (_exportMode != 'medidas' && (_exportMode != null || _displayMode == DeskDisplayMode.pines))
+                          ..._placedPins
+                              .where((p) => _exportMode != 'sst' || p.sticker.category == StickerCategory.peligros)
+                              .toList()
+                              .asMap()
+                              .entries
+                              .map((entry) {
+                            final pin = entry.value;
+                            final catNum = _getCategoryPinNumber(pin);
 
-                          return Positioned(
-                            left: pin.position.dx - 18,
-                            top: pin.position.dy - 18,
-                            child: GestureDetector(
-                              behavior: _displayMode == DeskDisplayMode.pines
-                                  ? HitTestBehavior.opaque
-                                  : HitTestBehavior.translucent,
-                              onPanUpdate: _displayMode == DeskDisplayMode.pines && !_isDrawingCota
-                                  ? (details) {
-                                      setState(() {
-                                        final newX = (pin.position.dx + details.delta.dx).clamp(16.0, canvasSize.width - 16.0);
-                                        final newY = (pin.position.dy + details.delta.dy).clamp(16.0, canvasSize.height - 52.0);
-                                        pin.position = Offset(newX, newY);
-                                      });
-                                    }
-                                  : null,
-                              onTap: _isDrawingCota ? null : () => _showPinOptionsModal(pin),
-                              child: Container(
-                                width: 36,
-                                height: 36,
-                                alignment: Alignment.center,
-                                color: Colors.transparent,
-                                child: _buildPinBadgeWidget(pin.sticker.category, catNum),
+                            return Positioned(
+                              left: pin.position.dx - 18,
+                              top: pin.position.dy - 18,
+                              child: GestureDetector(
+                                behavior: _displayMode == DeskDisplayMode.pines
+                                    ? HitTestBehavior.opaque
+                                    : HitTestBehavior.translucent,
+                                onPanUpdate: _displayMode == DeskDisplayMode.pines && !_isDrawingCota
+                                    ? (details) {
+                                        setState(() {
+                                          final newX = (pin.position.dx + details.delta.dx).clamp(16.0, canvasSize.width - 16.0);
+                                          final newY = (pin.position.dy + details.delta.dy).clamp(16.0, canvasSize.height - 52.0);
+                                          pin.position = Offset(newX, newY);
+                                        });
+                                      }
+                                    : null,
+                                onTap: _isDrawingCota ? null : () => _showPinOptionsModal(pin),
+                                child: Container(
+                                  width: 36,
+                                  height: 36,
+                                  alignment: Alignment.center,
+                                  color: Colors.transparent,
+                                  child: _buildPinBadgeWidget(pin.sticker.category, catNum),
+                                ),
                               ),
-                            ),
-                          );
-                        }),
+                            );
+                          }),
 
                         // Ficha técnica ultra-compacta dentro de la foto
                         Positioned(
@@ -1898,8 +1955,12 @@ class _DeskAnalysisScreenState extends State<DeskAnalysisScreen> {
                           ),
                         ),
 
-                        // 5. Leyenda Técnica Translúcida integrada dentro de la foto (Pie de página garantizado)
-                        if (_showLegendPreview && (_placedPins.isNotEmpty || _linearMeasurements.isNotEmpty))
+                        // 5. Leyenda Técnica Translúcida integrada dentro de la foto (excluyente: NUNCA en modo medidas)
+                        if (_exportMode != 'medidas' &&
+                            _showLegendPreview &&
+                            (_exportMode == 'sst'
+                                ? _placedPins.any((p) => p.sticker.category == StickerCategory.peligros)
+                                : (_displayMode == DeskDisplayMode.pines && _placedPins.isNotEmpty)))
                           Positioned(
                             bottom: 5,
                             left: 5,
@@ -2217,7 +2278,11 @@ class _DeskAnalysisScreenState extends State<DeskAnalysisScreen> {
               const Icon(Icons.format_list_bulleted, color: Color(0xFF38BDF8), size: 9),
               const SizedBox(width: 3),
               Text(
-                'PINES Y COTAS (${_placedPins.length + _linearMeasurements.length})',
+                _exportMode == 'sst'
+                    ? 'PELIGROS SST (${sstPins.length})'
+                    : _exportMode == 'pines'
+                        ? 'PINES TÉCNICOS (${_placedPins.length})'
+                        : 'PINES Y COTAS (${_placedPins.length + _linearMeasurements.length})',
                 style: const TextStyle(
                   color: Color(0xFF38BDF8),
                   fontSize: 7.0,
@@ -2248,8 +2313,8 @@ class _DeskAnalysisScreenState extends State<DeskAnalysisScreen> {
             ),
           ],
 
-          // 2. Materiales (● Círculos Verdes)
-          if (matPins.isNotEmpty) ...[
+          // 2. Materiales (● Círculos Verdes) - Excluido en modo SST
+          if (_exportMode != 'sst' && matPins.isNotEmpty) ...[
             if (sstPins.isNotEmpty) const SizedBox(height: 1.2),
             _buildInPhotoCategoryChipsRow(
               categoryColor: const Color(0xFF00E676),
@@ -2257,8 +2322,8 @@ class _DeskAnalysisScreenState extends State<DeskAnalysisScreen> {
             ),
           ],
 
-          // 3. Estructuras (■ Cuadrados Azules)
-          if (structPins.isNotEmpty) ...[
+          // 3. Estructuras (■ Cuadrados Azules) - Excluido en modo SST
+          if (_exportMode != 'sst' && structPins.isNotEmpty) ...[
             if (sstPins.isNotEmpty || matPins.isNotEmpty) const SizedBox(height: 1.2),
             _buildInPhotoCategoryChipsRow(
               categoryColor: const Color(0xFF00B0FF),
@@ -2266,8 +2331,8 @@ class _DeskAnalysisScreenState extends State<DeskAnalysisScreen> {
             ),
           ],
 
-          // 4. Medidas / Cotas
-          if (_linearMeasurements.isNotEmpty) ...[
+          // 4. Medidas / Cotas - Excluido en modo SST y modo Pines
+          if (_exportMode != 'sst' && _exportMode != 'pines' && _linearMeasurements.isNotEmpty) ...[
             if (sstPins.isNotEmpty || matPins.isNotEmpty || structPins.isNotEmpty) const SizedBox(height: 1.2),
             _buildInPhotoMeasurementsLegendRow(),
           ],

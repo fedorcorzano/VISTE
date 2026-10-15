@@ -2745,6 +2745,12 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
         debugPrint('Imagen de cotas/medidas guardada en: ${medidasFile.path}');
       }
 
+      // Guardar también la imagen exclusiva de SST (para el cliente)
+      final String sstFileName = localFileName.replaceAll('.png', '_sst.png');
+      final File sstFile = File('${designatedFolder.path}/$sstFileName');
+      await sstFile.writeAsBytes(clientPngBytes);
+      debugPrint('Imagen exclusiva SST guardada en: ${sstFile.path}');
+
       // Guardar también la foto base limpia sin stickers/cotas para poder re-editar sin duplicar trazos
       if (_capturedImageBytes != null) {
         final String rawFileName = localFileName.replaceAll('.png', '_raw.jpg');
@@ -2788,6 +2794,7 @@ class _CameraOverlayScreenState extends State<CameraOverlayScreen> {
             : _sessionPhotoNumber,
         areaSector: finalAreaSector,
         localImagePath: localFilePath,
+        cleanPngBytes: _capturedImageBytes,
         pngBytes: pngBytes,
         clientPngBytes: clientPngBytes,
         measurementsPngBytes: measurementsPngBytes,

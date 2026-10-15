@@ -322,19 +322,46 @@ class ClientReportPdfService {
                 ],
               ),
               ...session.photos.map((p) {
+                final status = p.effectiveTechnicalStatus;
+                final PdfColor badgeBg;
+                final PdfColor badgeText;
+                final String badgeLabel;
+                final String defaultDesc;
+
+                if (status == 'no_apto') {
+                  badgeBg = const PdfColor.fromInt(0xFFFEE2E2);
+                  badgeText = const PdfColor.fromInt(0xFFDC2626);
+                  badgeLabel = 'No Apto para Instalación';
+                  defaultDesc = 'Sector con riesgos críticos no aptos para el montaje hasta subsanar condiciones de seguridad.';
+                } else if (status == 'condicionado') {
+                  badgeBg = const PdfColor.fromInt(0xFFFEF3C7);
+                  badgeText = const PdfColor.fromInt(0xFFD97706);
+                  badgeLabel = 'Apto Condicionado a SST';
+                  defaultDesc = 'Punto apto sujeto a cumplimiento de medidas preventivas y controles de SST requeridos.';
+                } else {
+                  badgeBg = const PdfColor.fromInt(0xFFDCFCE7);
+                  badgeText = const PdfColor.fromInt(0xFF15803D);
+                  badgeLabel = 'Apto para Instalación';
+                  defaultDesc = 'Punto de instalación preparado y apto para montaje de equipos cotizados.';
+                }
+
+                final desc = (p.technicalObservation != null && p.technicalObservation!.trim().isNotEmpty)
+                    ? p.technicalObservation!.trim()
+                    : defaultDesc;
+
                 return pw.TableRow(
                   children: [
                     pw.Padding(
                       padding: const pw.EdgeInsets.all(6),
                       child: pw.Text(
-                        p.areaSector,
+                        p.areaSector.isNotEmpty ? p.areaSector : 'Sector sin definir',
                         style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: primaryColor),
                       ),
                     ),
                     pw.Padding(
                       padding: const pw.EdgeInsets.all(6),
                       child: pw.Text(
-                        'Punto de instalacion preparado y apto para montaje de equipos cotizados.',
+                        desc,
                         style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey800),
                       ),
                     ),
@@ -343,12 +370,12 @@ class ClientReportPdfService {
                       child: pw.Container(
                         padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                         decoration: pw.BoxDecoration(
-                          color: const PdfColor.fromInt(0xFFDCFCE7),
+                          color: badgeBg,
                           borderRadius: pw.BorderRadius.circular(3),
                         ),
                         child: pw.Text(
-                          'Apto para Instalacion',
-                          style: const pw.TextStyle(fontSize: 7.5, color: PdfColor.fromInt(0xFF15803D)),
+                          badgeLabel,
+                          style: pw.TextStyle(fontSize: 7.5, color: badgeText, fontWeight: pw.FontWeight.bold),
                         ),
                       ),
                     ),

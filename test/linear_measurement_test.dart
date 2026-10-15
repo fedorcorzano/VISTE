@@ -457,6 +457,7 @@ void main() {
       guidedTargetB = null;
 
       expect(guidedOriginA, tapA);
+      expect(isGuidingOriginA, isFalse);
       expect(isGuidingDestinationB, isTrue);
 
       // Toque 2: Tap en (250, 180)

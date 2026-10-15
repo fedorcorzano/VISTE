@@ -280,4 +280,161 @@ void main() {
       expect(allItems.any((i) => i.title == 'Herramienta de Prueba 2026'), isTrue);
     });
   });
+
+  group('Technical Status and Image Exclusivity Tests', () {
+    final samplePng = Uint8List.fromList([
+      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+      0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+      0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+      0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+      0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41,
+      0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+      0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00,
+      0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
+      0x42, 0x60, 0x82
+    ]);
+
+    test('effectiveTechnicalStatus calculates no_apto, condicionado, apto, and manual override', () {
+      // 1. Critical danger -> no_apto
+      final rCritical = SessionEvidenceRecord(
+        photoNumber: 1,
+        areaSector: 'Tablero Principal',
+        localImagePath: '',
+        pngBytes: samplePng,
+        estructuras: const [],
+        materiales: const [],
+        herramientas: const [],
+        accesorios: const [],
+        peligros: ['Riesgo Eléctrico / Tensión Viva'],
+        timestamp: DateTime.now(),
+      );
+      expect(rCritical.effectiveTechnicalStatus, 'no_apto');
+
+      // 2. Non-critical danger -> condicionado
+      final rNonCritical = SessionEvidenceRecord(
+        photoNumber: 2,
+        areaSector: 'Techo Almacén',
+        localImagePath: '',
+        pngBytes: samplePng,
+        estructuras: const [],
+        materiales: const [],
+        herramientas: const [],
+        accesorios: const [],
+        peligros: ['Trabajo en Altura'],
+        timestamp: DateTime.now(),
+      );
+      expect(rNonCritical.effectiveTechnicalStatus, 'condicionado');
+
+      // 3. No danger -> apto
+      final rSafe = SessionEvidenceRecord(
+        photoNumber: 3,
+        areaSector: 'Oficina Gerencia',
+        localImagePath: '',
+        pngBytes: samplePng,
+        estructuras: const [],
+        materiales: const [],
+        herramientas: const [],
+        accesorios: const [],
+        peligros: [],
+        timestamp: DateTime.now(),
+      );
+      expect(rSafe.effectiveTechnicalStatus, 'apto');
+
+      // 4. Manual override has highest precedence
+      final rOverride = rCritical.copyWith(
+        technicalStatus: 'condicionado',
+        technicalObservation: 'Personal técnico calificado con EPP dieléctrico clase 0',
+      );
+      expect(rOverride.effectiveTechnicalStatus, 'condicionado');
+      expect(rOverride.technicalObservation, contains('EPP dieléctrico'));
+    });
+
+    test('clientImageBytes returns clean image when no dangers or clientPngBytes when present', () {
+      final sstOnlyPng = Uint8List.fromList([1, 2, 3]);
+      final cleanPng = Uint8List.fromList([4, 5, 6]);
+
+      // When clientPngBytes is set, it is returned
+      final rWithSst = SessionEvidenceRecord(
+        photoNumber: 1,
+        areaSector: 'Sector 1',
+        localImagePath: '',
+        pngBytes: samplePng,
+        clientPngBytes: sstOnlyPng,
+        cleanPngBytes: cleanPng,
+        estructuras: const [],
+        materiales: const [],
+        herramientas: const [],
+        accesorios: const [],
+        peligros: ['Riesgo Eléctrico'],
+        timestamp: DateTime.now(),
+      );
+      expect(rWithSst.clientImageBytes, sstOnlyPng);
+
+      // When clientPngBytes is null and no hazards, returns cleanPngBytes
+      final rNoHazards = SessionEvidenceRecord(
+        photoNumber: 2,
+        areaSector: 'Sector 2',
+        localImagePath: '',
+        pngBytes: samplePng,
+        cleanPngBytes: cleanPng,
+        estructuras: const [],
+        materiales: const [],
+        herramientas: const [],
+        accesorios: const [],
+        peligros: [],
+        timestamp: DateTime.now(),
+      );
+      expect(rNoHazards.clientImageBytes, cleanPng);
+    });
+
+    test('ClientReportPdfService generates PDF with dynamic technical status and observations', () async {
+      final project = ProjectModel(
+        contacto: 'Cliente Test',
+        direccion: 'Av. Test 123',
+        celular: '999111222',
+        correo: 'test@cliente.com',
+        proyecto: 'Proyecto Validación SST',
+        fecha: '2026-10-15',
+        mapa: '-12.0, -77.0',
+        responsable: 'Gestor Test',
+      );
+      final testSession = ProjectSessionModel(project: project);
+
+      testSession.addPhoto(SessionEvidenceRecord(
+        photoNumber: 1,
+        areaSector: 'Sala Eléctrica',
+        localImagePath: '',
+        pngBytes: samplePng,
+        clientPngBytes: samplePng,
+        estructuras: const ['Concreto'],
+        materiales: const ['Tubo EMT'],
+        herramientas: const [],
+        accesorios: const [],
+        peligros: ['Riesgo Eléctrico'],
+        technicalStatus: 'no_apto',
+        technicalObservation: 'No apto: requerida desenergización previa.',
+        timestamp: DateTime.now(),
+      ));
+
+      testSession.addPhoto(SessionEvidenceRecord(
+        photoNumber: 2,
+        areaSector: 'Pasillo Principal',
+        localImagePath: '',
+        pngBytes: samplePng,
+        clientPngBytes: samplePng,
+        estructuras: const [],
+        materiales: const [],
+        herramientas: const [],
+        accesorios: const [],
+        peligros: [],
+        technicalStatus: 'apto',
+        technicalObservation: 'Apto: libre de interferencias.',
+        timestamp: DateTime.now(),
+      ));
+
+      final pdfBytes = await ClientReportPdfService.generatePdf(testSession);
+      expect(pdfBytes.isNotEmpty, isTrue);
+      expect(pdfBytes.length, greaterThan(1000));
+    });
+  });
 }

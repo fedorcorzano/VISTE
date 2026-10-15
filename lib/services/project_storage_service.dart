@@ -31,13 +31,52 @@ class ProjectStorageService {
       final dir = await _getProjectsDirectory();
       final file = File('${dir.path}/${session.id}.json');
 
-      // Si hay imágenes de cliente (SST) en memoria y no en disco, guardarlas junto a la foto principal
+      // Guardar imágenes de cliente (SST), cotas y fotos base en disco si existen en memoria
       for (final photo in session.photos) {
-        if (photo.clientPngBytes != null && photo.localImagePath.isNotEmpty) {
-          final sstPath = photo.localImagePath.replaceAll('.png', '_sst.png');
-          final sstFile = File(sstPath);
-          if (!sstFile.existsSync()) {
-            await sstFile.writeAsBytes(photo.clientPngBytes!);
+        if (photo.localImagePath.isNotEmpty) {
+          // 1. Imagen principal con pines
+          if (photo.pngBytes.isNotEmpty) {
+            try {
+              final mainFile = File(photo.localImagePath);
+              await mainFile.writeAsBytes(photo.pngBytes);
+            } catch (e) {
+              debugPrint('Error guardando imagen principal: $e');
+            }
+          }
+
+          // 2. Imagen exclusiva para cliente SST (solo riesgos SST)
+          if (photo.clientPngBytes != null && photo.clientPngBytes!.isNotEmpty) {
+            try {
+              final sstPath = photo.localImagePath.replaceAll('.png', '_sst.png');
+              final sstFile = File(sstPath);
+              await sstFile.writeAsBytes(photo.clientPngBytes!);
+            } catch (e) {
+              debugPrint('Error guardando imagen SST: $e');
+            }
+          }
+
+          // 3. Imagen exclusiva de cotas/medidas
+          if (photo.measurementsPngBytes != null && photo.measurementsPngBytes!.isNotEmpty) {
+            try {
+              final medidasPath = photo.localImagePath.replaceAll('.png', '_medidas.png');
+              final medidasFile = File(medidasPath);
+              await medidasFile.writeAsBytes(photo.measurementsPngBytes!);
+            } catch (e) {
+              debugPrint('Error guardando imagen cotas: $e');
+            }
+          }
+
+          // 4. Imagen base limpia (raw)
+          if (photo.cleanPngBytes != null && photo.cleanPngBytes!.isNotEmpty) {
+            try {
+              final rawPath = photo.localImagePath.replaceAll('.png', '_raw.jpg');
+              final rawFile = File(rawPath);
+              if (!rawFile.existsSync()) {
+                await rawFile.writeAsBytes(photo.cleanPngBytes!);
+              }
+            } catch (e) {
+              debugPrint('Error guardando imagen raw: $e');
+            }
           }
         }
       }
