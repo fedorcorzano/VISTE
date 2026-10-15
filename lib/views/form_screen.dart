@@ -302,33 +302,27 @@ class _FormScreenState extends State<FormScreen> {
                           ),
                           const SizedBox(height: 5),
 
-                          // 3. Celular y Correo en 2 columnas compactas (ahorro sustancial de espacio vertical)
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _buildTextField(
-                                  controller: _celularController,
-                                  label: 'Celular',
-                                  hint: '987654321',
-                                  icon: Icons.phone_android_outlined,
-                                  keyboardType: TextInputType.phone,
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: _buildTextField(
-                                  controller: _correoController,
-                                  label: 'Correo',
-                                  hint: 'correo@ejemplo.com',
-                                  icon: Icons.alternate_email_outlined,
-                                  keyboardType: TextInputType.emailAddress,
-                                ),
-                              ),
-                            ],
+                          // 3. Campo Celular (en su propia línea)
+                          _buildTextField(
+                            controller: _celularController,
+                            label: 'Celular',
+                            hint: 'Ej. 987654321',
+                            icon: Icons.phone_android_outlined,
+                            keyboardType: TextInputType.phone,
                           ),
                           const SizedBox(height: 5),
 
-                          // 4. Responsable Técnico
+                          // 4. Campo Correo (en su propia línea)
+                          _buildTextField(
+                            controller: _correoController,
+                            label: 'Correo Electrónico',
+                            hint: 'Ej. correo@ejemplo.com',
+                            icon: Icons.alternate_email_outlined,
+                            keyboardType: TextInputType.emailAddress,
+                          ),
+                          const SizedBox(height: 5),
+
+                          // 5. Responsable Técnico
                           _buildTextField(
                             controller: _responsableController,
                             label: 'Responsable Técnico',
@@ -341,11 +335,11 @@ class _FormScreenState extends State<FormScreen> {
                           ),
                           const SizedBox(height: 5),
 
-                          // 5. Clasificación del Proyecto (Iconos en una sola fila compacta)
+                          // 6. Clasificación del Proyecto (Iconos en una sola fila compacta)
                           _buildClasificacionSelector(),
                           const SizedBox(height: 5),
 
-                          // 6. Dropdown Proyecto desde Excel (sin texto redundante y altura compacta)
+                          // 7. Dropdown Proyecto desde Excel (sin texto redundante y altura compacta)
                           _buildProjectDropdown(),
                         ],
                       ),
