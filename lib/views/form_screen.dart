@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
@@ -193,109 +194,172 @@ class _FormScreenState extends State<FormScreen> {
     }
   }
 
+  Widget _buildGestureHelpBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+      color: const Color(0xFF0F172A),
+      child: Row(
+        children: [
+          const Icon(Icons.swipe, size: 13, color: Color(0xFF38BDF8)),
+          const SizedBox(width: 6),
+          const Text(
+            'Desliza ⬇ recargar • ⬅ volver',
+            style: TextStyle(
+              color: Color(0xFF94A3B8),
+              fontSize: 10.5,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.2,
+            ),
+          ),
+          const Spacer(),
+          if (_isGettingLocation)
+            const SizedBox(
+              width: 12,
+              height: 12,
+              child: CircularProgressIndicator(
+                strokeWidth: 1.5,
+                color: Color(0xFF38BDF8),
+              ),
+            )
+          else
+            const Icon(Icons.gps_fixed, size: 12, color: Color(0xFF10B981)),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF1E293B),
-        foregroundColor: Colors.white,
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Recargar catálogos de Excel',
-            onPressed: _loadCatalogs,
-          ),
-        ],
-      ),
+      // Se eliminó el AppBar para ganar todo el espacio vertical en pantalla
       body: SafeArea(
         bottom: false,
-        child: Column(
-          children: [
-            Flexible(
-              flex: 0,
-              child: SingleChildScrollView(
-                physics: const ClampingScrollPhysics(),
-                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-                padding: const EdgeInsets.fromLTRB(16.0, 10.0, 16.0, 8.0),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // Campo Contacto / Cliente
-                      _buildTextField(
-                        controller: _contactoController,
-                        label: 'Contacto / Cliente / Empresa',
-                        hint: 'Ej. Juan Pérez o ABC SAC',
-                        icon: Icons.person_outline,
-                        validator: (value) =>
-                            value == null || value.trim().isEmpty
-                                ? 'El nombre o contacto es obligatorio'
-                                : null,
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          // Gesto: Volver a la pantalla anterior deslizando de derecha a izquierda
+          onHorizontalDragEnd: (details) {
+            if (details.primaryVelocity != null &&
+                (details.primaryVelocity! < -250 || details.primaryVelocity! > 250)) {
+              HapticFeedback.lightImpact();
+              Navigator.pop(context);
+            }
+          },
+          child: Column(
+            children: [
+              // Barra indicadora ultra-compacta de gestos (reemplaza a los íconos de AppBar)
+              _buildGestureHelpBar(),
+
+              // Formulario scrollable con soporte de pull-down para recargar
+              Flexible(
+                flex: 0,
+                child: RefreshIndicator(
+                  color: const Color(0xFF38BDF8),
+                  backgroundColor: const Color(0xFF1E293B),
+                  onRefresh: () async {
+                    HapticFeedback.mediumImpact();
+                    await Future.wait([
+                      _loadCatalogs(),
+                      _obtenerUbicacionGPS(),
+                    ]);
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('✓ Catálogos y GPS recargados'),
+                        backgroundColor: Color(0xFF10B981),
+                        duration: Duration(seconds: 2),
                       ),
-                      const SizedBox(height: 8),
+                    );
+                  },
+                  child: SingleChildScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(parent: ClampingScrollPhysics()),
+                    keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                    padding: const EdgeInsets.fromLTRB(14.0, 2.0, 14.0, 6.0),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // 1. Campo Contacto / Cliente
+                          _buildTextField(
+                            controller: _contactoController,
+                            label: 'Contacto / Cliente / Empresa',
+                            hint: 'Ej. Juan Pérez o ABC SAC',
+                            icon: Icons.person_outline,
+                            validator: (value) =>
+                                value == null || value.trim().isEmpty
+                                    ? 'El nombre o contacto es obligatorio'
+                                    : null,
+                          ),
+                          const SizedBox(height: 5),
 
-                      // Campo Dirección
-                      _buildTextField(
-                        controller: _direccionController,
-                        label: 'Dirección o Ubicación de Obra',
-                        hint: 'Ej. Av. Javier Prado Este 1234',
-                        icon: Icons.location_on_outlined,
+                          // 2. Campo Dirección
+                          _buildTextField(
+                            controller: _direccionController,
+                            label: 'Dirección o Ubicación de Obra',
+                            hint: 'Ej. Av. Javier Prado Este 1234',
+                            icon: Icons.location_on_outlined,
+                          ),
+                          const SizedBox(height: 5),
+
+                          // 3. Celular y Correo en 2 columnas compactas (ahorro sustancial de espacio vertical)
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _buildTextField(
+                                  controller: _celularController,
+                                  label: 'Celular',
+                                  hint: '987654321',
+                                  icon: Icons.phone_android_outlined,
+                                  keyboardType: TextInputType.phone,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: _buildTextField(
+                                  controller: _correoController,
+                                  label: 'Correo',
+                                  hint: 'correo@ejemplo.com',
+                                  icon: Icons.alternate_email_outlined,
+                                  keyboardType: TextInputType.emailAddress,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 5),
+
+                          // 4. Responsable Técnico
+                          _buildTextField(
+                            controller: _responsableController,
+                            label: 'Responsable Técnico',
+                            hint: 'Nombre del inspector',
+                            icon: Icons.badge_outlined,
+                            validator: (value) =>
+                                value == null || value.trim().isEmpty
+                                    ? 'El responsable es obligatorio'
+                                    : null,
+                          ),
+                          const SizedBox(height: 5),
+
+                          // 5. Clasificación del Proyecto (Iconos en una sola fila compacta)
+                          _buildClasificacionSelector(),
+                          const SizedBox(height: 5),
+
+                          // 6. Dropdown Proyecto desde Excel (sin texto redundante y altura compacta)
+                          _buildProjectDropdown(),
+                        ],
                       ),
-                      const SizedBox(height: 8),
-
-                      // Campo Celular
-                      _buildTextField(
-                        controller: _celularController,
-                        label: 'Número de Celular',
-                        hint: 'Ej. 987654321',
-                        icon: Icons.phone_android_outlined,
-                        keyboardType: TextInputType.phone,
-                      ),
-                      const SizedBox(height: 8),
-
-                      // Campo Correo
-                      _buildTextField(
-                        controller: _correoController,
-                        label: 'Correo Electrónico',
-                        hint: 'ejemplo@correo.com',
-                        icon: Icons.alternate_email_outlined,
-                        keyboardType: TextInputType.emailAddress,
-                      ),
-                      const SizedBox(height: 8),
-
-                      // Campo Responsable
-                      _buildTextField(
-                        controller: _responsableController,
-                        label: 'Responsable Técnico',
-                        hint: 'Nombre del inspector',
-                        icon: Icons.badge_outlined,
-                        validator: (value) =>
-                            value == null || value.trim().isEmpty
-                                ? 'El responsable es obligatorio'
-                                : null,
-                      ),
-                      const SizedBox(height: 8),
-
-                      // Clasificación del Proyecto (Iconos en una sola fila compacta)
-                      _buildClasificacionSelector(),
-                      const SizedBox(height: 8),
-
-                      // Dropdown Proyecto desde Excel (sin texto "Tipo de Proyecto (desde Excel)", altura reducida)
-                      _buildProjectDropdown(),
-                    ],
+                    ),
                   ),
                 ),
               ),
-            ),
 
-            // Mapa 2D Interactivo: desde debajo de Tipo de Proyecto hasta el límite inferior de la pantalla
-            Expanded(
-              child: _buildInteractive2DMap(),
-            ),
-          ],
+              // 7. Mapa 2D Interactivo: desde debajo de Tipo de Proyecto hasta el límite inferior de la pantalla
+              Expanded(
+                child: _buildInteractive2DMap(),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -303,11 +367,11 @@ class _FormScreenState extends State<FormScreen> {
 
   Widget _buildClasificacionSelector() {
     return Container(
-      height: 42,
-      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+      height: 38,
+      padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 8),
       decoration: BoxDecoration(
         color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(
           color: const Color(0xFF334155),
           width: 1,
@@ -338,17 +402,17 @@ class _FormScreenState extends State<FormScreen> {
             message: clasif,
             child: InkWell(
               onTap: () => setState(() => _selectedClasificacion = clasif),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(6),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
                 decoration: BoxDecoration(
                   color: isSelected ? const Color(0xFF38BDF8) : Colors.transparent,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(6),
                 ),
                 child: Icon(
                   iconData,
-                  size: 22,
+                  size: 20,
                   color: isSelected ? const Color(0xFF001F2F) : const Color(0xFF94A3B8),
                 ),
               ),
@@ -361,11 +425,11 @@ class _FormScreenState extends State<FormScreen> {
 
   Widget _buildProjectDropdown() {
     return Container(
-      height: 44,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
         color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(
           color: const Color(0xFF334155),
           width: 1,
@@ -381,16 +445,16 @@ class _FormScreenState extends State<FormScreen> {
           dropdownColor: const Color(0xFF1E293B),
           style: const TextStyle(
             color: Colors.white,
-            fontSize: 13,
+            fontSize: 12.5,
             fontWeight: FontWeight.w500,
           ),
           hint: const Row(
             children: [
-              Icon(Icons.work_outline, color: Color(0xFF38BDF8), size: 18),
+              Icon(Icons.work_outline, color: Color(0xFF38BDF8), size: 16),
               SizedBox(width: 8),
               Text(
                 'Seleccionar Proyecto',
-                style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
+                style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
               ),
             ],
           ),
@@ -399,14 +463,14 @@ class _FormScreenState extends State<FormScreen> {
               value: p,
               child: Row(
                 children: [
-                  const Icon(Icons.work_outline, color: Color(0xFF38BDF8), size: 18),
+                  const Icon(Icons.work_outline, color: Color(0xFF38BDF8), size: 16),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       p,
                       overflow: TextOverflow.ellipsis,
                       maxLines: 1,
-                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                      style: const TextStyle(color: Colors.white, fontSize: 12.5),
                     ),
                   ),
                 ],
@@ -448,32 +512,32 @@ class _FormScreenState extends State<FormScreen> {
       readOnly: readOnly,
       keyboardType: keyboardType,
       validator: validator,
-      style: const TextStyle(color: Colors.white, fontSize: 13),
+      style: const TextStyle(color: Colors.white, fontSize: 12.5),
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+        labelStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11.5),
         hintText: hint,
-        hintStyle: const TextStyle(color: Color(0xFF475569), fontSize: 12),
-        prefixIcon: Icon(icon, color: const Color(0xFF38BDF8), size: 19),
+        hintStyle: const TextStyle(color: Color(0xFF475569), fontSize: 11.5),
+        prefixIcon: Icon(icon, color: const Color(0xFF38BDF8), size: 18),
         suffixIcon: effectiveSuffixIcon,
         filled: true,
         fillColor: const Color(0xFF1E293B),
         isDense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(8),
           borderSide: const BorderSide(color: Color(0xFF334155), width: 1),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(8),
           borderSide: const BorderSide(color: Color(0xFF38BDF8), width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(8),
           borderSide: const BorderSide(color: Colors.redAccent, width: 1),
         ),
         focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(8),
           borderSide: const BorderSide(color: Colors.redAccent, width: 1.5),
         ),
       ),
