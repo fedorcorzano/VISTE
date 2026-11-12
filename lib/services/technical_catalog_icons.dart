@@ -114,4 +114,71 @@ class TechnicalCatalogIcons {
 
     return Icons.warning_amber_rounded;
   }
+
+  /// Retorna el icono representativo para el tipo de sistema o servicio a instalar
+  static IconData getProjectSystemIcon(String? projectType) {
+    if (projectType == null || projectType.trim().isEmpty) {
+      return Icons.work_outline;
+    }
+    final lower = projectType.toLowerCase().trim();
+
+    if (lower.contains('camara') ||
+        lower.contains('cámara') ||
+        lower.contains('cctv') ||
+        lower.contains('video')) {
+      return Icons.videocam_rounded;
+    }
+    if (lower.contains('acceso') ||
+        lower.contains('asistencia') ||
+        lower.contains('biometr')) {
+      return Icons.fingerprint_rounded;
+    }
+    if (lower.contains('incendio') ||
+        lower.contains('humo') ||
+        lower.contains('fuego') ||
+        lower.contains('deteccion') ||
+        lower.contains('detección')) {
+      return Icons.local_fire_department_rounded;
+    }
+    if (lower.contains('intrusion') ||
+        lower.contains('intrusión') ||
+        lower.contains('alarma') ||
+        lower.contains('cerco')) {
+      return Icons.security_rounded;
+    }
+    if (lower.contains('cableado') ||
+        lower.contains('red') ||
+        lower.contains('datos') ||
+        lower.contains('estructurado')) {
+      return Icons.lan_rounded;
+    }
+    if (lower.contains('fibra') ||
+        lower.contains('inalambric') ||
+        lower.contains('inalámbric') ||
+        lower.contains('enlace') ||
+        lower.contains('antena')) {
+      return Icons.settings_input_antenna_rounded;
+    }
+    if (lower.contains('electric') ||
+        lower.contains('eléctric') ||
+        lower.contains('canalizacion') ||
+        lower.contains('canalización') ||
+        lower.contains('tablero') ||
+        lower.contains('pozo')) {
+      return Icons.electrical_services_rounded;
+    }
+    if (lower.contains('mantenimiento') ||
+        lower.contains('preventivo') ||
+        lower.contains('correctivo')) {
+      return Icons.build_circle_outlined;
+    }
+    if (lower.contains('sst') ||
+        lower.contains('seguridad') ||
+        lower.contains('inspeccion') ||
+        lower.contains('inspección')) {
+      return Icons.health_and_safety_rounded;
+    }
+
+    return Icons.engineering_rounded;
+  }
 }
